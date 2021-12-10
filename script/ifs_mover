@@ -1,0 +1,55 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+'''
+ifs_mover
+'''
+import sys
+import os
+import argparse
+
+if __name__ == "__main__":
+    if len(sys.argv) <= 1:
+        os.system("java -jar ./lib/ifs-mover")
+        exit()
+
+    isT = False
+    isSource = False
+    isTarget = False
+    isRerun = False
+    isCheck = False
+    isStatus = False
+
+
+    if len(sys.argv) == 2:
+        os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover " + sys.argv[1])
+        exit()
+
+    ifs_args = ""
+    for i in range(1, len(sys.argv)):
+        ifs_args += sys.argv[i] + " "
+
+    if "-t" in ifs_args:
+        isT = True
+    if "-source" in ifs_args:
+        isSource = True
+    if "-target" in ifs_args:
+        isTarget = True
+    if "-rerun" in ifs_args:
+        isRerun = True
+    if "-check" in ifs_args:
+        isCheck = True
+
+    if isT and isSource and isTarget:
+        if isCheck:
+            os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover " + ifs_args)
+            exit()
+        else :
+            os.system("nohup java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover " + ifs_args + " >/dev/null 2>&1 &")
+            exit()
+        
+    if isRerun and isSource and isTarget:
+        os.system("nohup java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover " + ifs_args + " >/dev/null 2>&1 &")
+        exit()
+    else :
+        os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover" + " " + ifs_args)
+        exit()
