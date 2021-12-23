@@ -13,7 +13,6 @@
 * 재수행 옵션(-rerun)을 통해 소스 경로의 신규 및 수정된 오브젝트 및 파일만 추가로 이관하는 기능 제공
 * 상태 확인 옵션(-status)을 통해 현재 수행 중인 이관 작업의 상태를 실시간으로 모니터링 가능 
 * 수행 쓰레드 수 지정 옵션(-thread=`number`)을 통해 이관 작업 부하 및 성능 제어 가능
-* 리눅스 환경에서 실행 지원 (윈도우 InfiniStor환경 대응은 추후 예정)
 
 ### 실행 옵션
 ```sh
@@ -64,22 +63,22 @@ target.conf
 주) –o는 향후 개발 예정
 ```
 
-## 실행 예시(CLI)
+## 실행 예시(CLI-Linux)
 ### 설정 파일 체크
 ```sh
-ifs_mover -check -t=nas  -source=source.conf -target=target.conf
+ifs_mover -check -t=nas -source=source.conf -target=target.conf
 or
-ifs_mover -check -t=s3  -source=source.conf -target=target.conf
+ifs_mover -check -t=s3 -source=source.conf -target=target.conf
 ```
 
 ### AWS S3 -> InfiniStor 이관 작업 등록 및 실행
 ```sh
-ifs_mover -t=s3  -source=source.conf -target=target.conf -thread=4
+ifs_mover -t=s3 -source=source.conf -target=target.conf -thread=4
 ```
 
 ### NAS -> InfiniStor 이관 작업 등록 및 실행
 ```sh
-ifs_mover -t=nas  -source=source.conf -target=target.conf -thread=4
+ifs_mover -t=nas -source=source.conf -target=target.conf -thread=4
 ```
 
 ### Job ID가 1로 배정된 이관 작업을 재수행 
@@ -264,8 +263,46 @@ target.conf
 * AWS S3(new-bucket-test-mover-07-20)에서 InfiniStor(ifs-mover-test-version-target/version/from-aws0805)로 전체 데이터 마이그레이션 수행
 ![](/images/sample6.png)
 
+
+## Windows 실행 예시
+* python이 설치되어 있어야 합니다.
+* <kbd>python --version</dbd> 로 설치되어 있는지 확인하세요.
+
+* 네트워크 드라이브를 T: 로 설정한 경우
+![](/images/network_driver.png)
+
+#### nas -> S3 (T:/source_data/* -> /move-test/*)
+```sh
+source.conf 
+    mountpoint=T:/source_data
+    endpoint=
+    access=
+    secret=
+    bucket=
+    prefix=
+
+target.conf
+    endpoint=http://192.168.11.02:8080
+    access=a9dad4ce7233sdfesdfsd
+    secret=sdfsdfsdfcd408e83e23dab92
+    bucket=move-test
+    prefix=
+```
+#### 설정 파일 체크
+```sh
+python ifs_mover -check -t=nas -source=source.conf -target=target.conf -thread=4
+```
+#### 실행
+```sh
+python ifs_mover -t=nas -source=source.conf -target=target.conf -thread=4
+```
+#### 주의사항
+* Windows에서는 ifs_mover 앞에 python을 붙여주어야 합니다.
+
+
+
 ## DB Schema
- ![](/images/heoks_ifs_mover_db_5.png)
+![](/images/heoks_ifs_mover_db_5.png)
 
 ## 로그 파일
 
@@ -291,6 +328,7 @@ target.conf
 
 * OS : CentOS Linux release 7.5 이상
 * JDK : 1.8 이상
+* Python : 2.0 이상
 
 ## How to Get Started
 <kbd>git clone https://github.com/infinistor/ifsmover.git</kbd>
@@ -318,6 +356,10 @@ target.conf
  * script/ifs-mover.xml - log파일 관련 설정
 
 * 3개의 파일을 실행시킬 위치에 복사합니다.
+ * target/ifs-mover.jar -> 실행시킬 위치/lib/ifs-mover.jar
+ * script/ifs-mover.xml -> 실행시킬 위치/etc/ifs-mover.xml
+ * script/ifs_mover -> 실행시킬 위치/ifs_mover
+
 * ifs_mover의 실행 권한을 확인합니다.
  * ifs_mover의 실행 권한이 없는 경우 실행권한을 부여합니다. <br>
  <kbd>chmod +x ifs_mover</kbd>

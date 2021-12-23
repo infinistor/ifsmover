@@ -9,7 +9,7 @@ import argparse
 
 if __name__ == "__main__":
     if len(sys.argv) <= 1:
-        os.system("java -jar ./lib/ifs-mover")
+        os.system("java -jar ./lib/ifs-mover.jar")
         exit()
 
     isT = False
@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
 
     if len(sys.argv) == 2:
-        os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover " + sys.argv[1])
+        os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover.jar " + sys.argv[1])
         exit()
 
     ifs_args = ""
@@ -41,15 +41,22 @@ if __name__ == "__main__":
 
     if isT and isSource and isTarget:
         if isCheck:
-            os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover " + ifs_args)
+            os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover.jar " + ifs_args)
             exit()
         else :
-            os.system("nohup java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover " + ifs_args + " >/dev/null 2>&1 &")
+            if (sys.platform == "win32"):
+                os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover.jar " + ifs_args)
+            else:
+                os.system("nohup java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover.jar " + ifs_args + " >/dev/null 2>&1 &")
             exit()
         
     if isRerun and isSource and isTarget:
-        os.system("nohup java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover " + ifs_args + " >/dev/null 2>&1 &")
+        if (sys.platform == "win32"):
+            os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover.jar " + ifs_args)
+        else :
+            os.system("nohup java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover.jar " + ifs_args + " >/dev/null 2>&1 &")
         exit()
     else :
-        os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover" + " " + ifs_args)
+        os.system("java -jar -Dlogback.configurationFile=./etc/ifs-mover.xml ./lib/ifs-mover.jar" + " " + ifs_args)
         exit()
+
