@@ -29,6 +29,7 @@ import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+
 import org.apache.commons.io.FilenameUtils;
 
 import com.amazonaws.AmazonClientException;
@@ -41,18 +42,25 @@ import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import com.amazonaws.services.s3.S3ClientOptions;
 import com.amazonaws.services.s3.model.BucketVersioningConfiguration;
+import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
 import com.amazonaws.services.s3.model.GetObjectMetadataRequest;
 import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
+import com.amazonaws.services.s3.model.InitiateMultipartUploadResult;
 import com.amazonaws.services.s3.model.ListObjectsRequest;
 import com.amazonaws.services.s3.model.ListVersionsRequest;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.model.S3VersionSummary;
 import com.amazonaws.services.s3.model.SetBucketVersioningConfigurationRequest;
+import com.amazonaws.services.s3.model.UploadPartRequest;
+import com.amazonaws.services.s3.model.UploadPartResult;
 import com.amazonaws.services.s3.model.VersionListing;
 
 public class ObjectMover {
@@ -75,6 +83,7 @@ public class ObjectMover {
 	private static final int RETRY_COUNT = 3;
 	private static final String NO_SUCH_KEY = "NoSuchKey";
 	private static final String NOT_FOUND = "Not Found";
+	private static final long MEGA_BYTES = 1024 * 1024;
 
 	private static final List<Map<String, String>>movedObjectList = new ArrayList<Map<String, String>>();
 	private static final List<Map<String, Long>>movedJobList = new ArrayList<Map<String, Long>>();
@@ -1145,6 +1154,7 @@ public class ObjectMover {
 	class Mover implements Runnable {
 		final Logger logger = LoggerFactory.getLogger(Mover.class);
 		List<Map<String, String>> list;
+		private long moveSize;
 
 		private String path;
 		private String latestPath;
@@ -1163,6 +1173,7 @@ public class ObjectMover {
 				
 		public Mover(List<Map<String, String>> list) {
 			this.list = list;
+			getMoveSize();
 		}
 
 		Mover(String path, long size, boolean isFile, String versionId, boolean isDelete) {
@@ -1171,6 +1182,15 @@ public class ObjectMover {
 			this.isFile = isFile;
 			this.versionId = versionId;
 			this.isDelete = isDelete;
+		}
+
+		private void getMoveSize() {
+			String confMoveSize = sourceConfig.getMoveSize();
+			if (confMoveSize == null || confMoveSize.length() == 0) {
+				moveSize = 0L;
+			} else {
+				moveSize = Integer.parseInt(sourceConfig.getMoveSize()) * MEGA_BYTES;
+			}
 		}
 		
 		private boolean uploadFile(boolean isSize, String fileName, File file) {
@@ -1256,7 +1276,7 @@ public class ObjectMover {
 			return true;
 		}
 		
-		private boolean moveObject(String path, boolean isDelete, boolean isFile, String versionId) {
+		private boolean moveObject(String path, boolean isDelete, boolean isFile, String versionId, long size) {
 			String sourcePath = path;
 			String targetObject = path;
 
@@ -1294,32 +1314,82 @@ public class ObjectMover {
 					S3Object objectData = null;
 
 					if (isFile) {
-						if (versionId == null) {
-							getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath);
+						if (moveSize != 0 && size > moveSize) {
+							InitiateMultipartUploadResult initMultipart = targetS3.initiateMultipartUpload(new InitiateMultipartUploadRequest(targetConfig.getBucket(), targetObject));
+							String uploadId = initMultipart.getUploadId();
+							List<PartETag> partList = new ArrayList<PartETag>();
+							int partNumber = 1;
+							for (long i = 0; i < size; i += moveSize, partNumber++) {
+								long start = i;
+								long end = i + moveSize - 1;
+								if (end >= size) {
+									end = size - 1;
+								}
+
+								if (versionId == null) {
+									getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withRange(start, end);
+								} else {
+									getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withVersionId(versionId).withRange(start, end);
+								}
+								objectData = sourceS3.getObject(getObjectRequest);
+								is = objectData.getObjectContent();
+								
+								UploadPartResult partResult = targetS3.uploadPart(new UploadPartRequest().withBucketName(targetConfig.getBucket()).withKey(targetObject)
+										.withUploadId(uploadId).withInputStream(is).withPartNumber(partNumber).withPartSize(end - start + 1));
+								partList.add(new PartETag(partNumber, partResult.getETag()));
+								is.close();
+							}
+							targetS3.completeMultipartUpload(new CompleteMultipartUploadRequest(targetConfig.getBucket(), targetObject, uploadId, partList));
+							if (versionId != null && !versionId.isEmpty()) {
+								if (versionId.compareToIgnoreCase("null") == 0) {
+									logger.info("move success : {}", sourcePath);
+								} else {
+									logger.info("move success : {}:{}", sourcePath, versionId);
+								}
+							} else {
+								logger.info("move success : {}", sourcePath);
+							}
 						} else {
-							getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withVersionId(versionId);
+							if (versionId == null) {
+								getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath);
+							} else {
+								getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withVersionId(versionId);
+							}
+							objectData = sourceS3.getObject(getObjectRequest);
+							is = objectData.getObjectContent();
+							meta = objectData.getObjectMetadata();
+
+							PutObjectRequest putObjectRequest;
+							putObjectRequest = new PutObjectRequest(targetConfig.getBucket(), targetObject, is, meta);
+							putObjectRequest.getRequestClientOptions().setReadLimit(1024 * 1024 * 1024);
+							targetS3.putObject(putObjectRequest);
+							if (versionId != null && !versionId.isEmpty()) {
+								if (versionId.compareToIgnoreCase("null") == 0) {
+									logger.info("move success : {}", sourcePath);
+								} else {
+									logger.info("move success : {}:{}", sourcePath, versionId);
+								}
+							} else {
+								logger.info("move success : {}", sourcePath);
+							}
 						}
-						objectData = sourceS3.getObject(getObjectRequest);
-						is = objectData.getObjectContent();
-						meta = objectData.getObjectMetadata();
 					} else {
 						GetObjectMetadataRequest getObjectMetadataRequest = new GetObjectMetadataRequest(sourceConfig.getBucket(), sourcePath);
 						meta = sourceS3.getObjectMetadata(getObjectMetadataRequest);
 						is = new ByteArrayInputStream(new byte[0]);
-					}
 
-					PutObjectRequest putObjectRequest;
-					putObjectRequest = new PutObjectRequest(targetConfig.getBucket(), targetObject, is, meta);
-					putObjectRequest.getRequestClientOptions().setReadLimit(1024 * 1024 * 1024);
-					targetS3.putObject(putObjectRequest);
-					if (versionId != null && !versionId.isEmpty()) {
-						if (versionId.compareToIgnoreCase("null") == 0) {
-							logger.info("move success : {}", sourcePath);
+						PutObjectRequest putObjectRequest;
+						putObjectRequest = new PutObjectRequest(targetConfig.getBucket(), targetObject, is, meta);
+						targetS3.putObject(putObjectRequest);
+						if (versionId != null && !versionId.isEmpty()) {
+							if (versionId.compareToIgnoreCase("null") == 0) {
+								logger.info("move success : {}", sourcePath);
+							} else {
+								logger.info("move success : {}:{}", sourcePath, versionId);
+							}
 						} else {
-							logger.info("move success : {}:{}", sourcePath, versionId);
+							logger.info("move success : {}", sourcePath);
 						}
-					} else {
-						logger.info("move success : {}", sourcePath);
 					}
 				}
 			} catch (AmazonServiceException ase) {
@@ -1336,9 +1406,12 @@ public class ObjectMover {
 				}
 				return false;
 	        } catch (AmazonClientException ace) {
-	        	logger.warn("{} {}", sourcePath, ace.getMessage());
+	        	logger.warn("{}", sourcePath, ace);
 	        	return false;
-	        }
+	         } catch (IOException e) {
+				logger.warn("{} {}", sourcePath, e.getMessage());
+				return false;
+			}
 			
 			return true;
 		}
@@ -1363,9 +1436,9 @@ public class ObjectMover {
 			isFault = true;
 		}
 		
-		private void retryMoveObject(String path, boolean isDelete, boolean isFile, String versionId) {
+		private void retryMoveObject(String path, boolean isDelete, boolean isFile, String versionId, long size) {
 			for (int i = 0; i < RETRY_COUNT; i++) {
-				if (moveObject(path, isDelete, isFile, versionId)) {
+				if (moveObject(path, isDelete, isFile, versionId, size)) {
 					return;
 				}
 			}
@@ -1473,7 +1546,7 @@ public class ObjectMover {
 						retryUploadDirectory(path);
 					}
 				} else {
-					retryMoveObject(path, isDelete, isFile, versionId);
+					retryMoveObject(path, isDelete, isFile, versionId, size);
 				}
 				
 				if (isFault) {
@@ -1499,7 +1572,7 @@ public class ObjectMover {
 						retryUploadDirectory(latestPath);
 					}
 				} else {
-					retryMoveObject(latestPath, latestIsDelete, latestIsFile, latestVersionId);
+					retryMoveObject(latestPath, latestIsDelete, latestIsFile, latestVersionId, size);
 				}
 				
 				if (isFault) {

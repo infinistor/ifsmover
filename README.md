@@ -54,6 +54,7 @@ source.conf
         secret                  Secret Access Key
         bucket                  bucket name
         prefix                  PREFIX DIR name from which to start the MOVE
+        move_size               The size of the file that you can move at once. (M bytes)
 target.conf
         endpoint                http(https)://IP:Port | region
         access                  Access Key ID
@@ -117,6 +118,7 @@ source.conf
     secret:     Secret Access Key
     bucket:     Bucket Name
     prefix:     MOVE를 시작할 PREFIX/DIR 이름 정보
+    move_size:  The size of the file that you can move at once. (M bytes)
 ```
 
 * endpoint : protocol(http|https):// IP:Port | region (AWS)
@@ -128,7 +130,7 @@ target.conf
     access:     Access Key ID
     secret:     Secret Access Key
     bucket:     Bucket Name
-    prefix:      저장 될 PREFIX/DIR 이름 정보
+    prefix:     저장 될 PREFIX/DIR 이름 정보
 ```
 
 ### 설정 파일 예시
@@ -142,6 +144,7 @@ source.conf
     secret=
     bucket=
     prefix=move_old_objects
+    move_size=
 
 target.conf
     endpoint=http://192.168.11.02:8080
@@ -160,6 +163,7 @@ source.conf
     secret=
     bucket=
     prefix=move_old_objects
+    move_size=
 
 target.conf
     endpoint=ap-northeast-2
@@ -178,6 +182,7 @@ source.conf
     secret=sdfsdfsdfcd408e83e23dab92
     bucket=move-test
     prefix=move_old_objects
+    move_size=
 
 target.conf
     endpoint=https://www.s3other.com:8443
@@ -196,6 +201,7 @@ source.conf
     secret=sdfsdfsdfcd408e83e23dab92
     bucket=move-test
     prefix=0720
+    move_size=
 
 target.conf
     endpoint=ap-northeast-2
@@ -214,6 +220,7 @@ source.conf
     secret=AdkjJDKDSDjksdkTBEFjgUIZav0kFG
     bucket=move-test
     prefix=move_old_objects
+    move_size=
 
 target.conf
     endpoint=http://192.168.11.02:8080
@@ -232,6 +239,7 @@ source.conf
     secret=AdkjJDKDSDjksdkTBEFjgUIZav0kFG
     bucket=old_objects
     prefix=
+    move_size=
 
 target.conf
     endpoint=us-west-1
@@ -280,6 +288,7 @@ source.conf
     secret=
     bucket=
     prefix=
+    move_size=500   // 500M 이상의 파일은 나눠서 옮김
 
 target.conf
     endpoint=http://192.168.11.02:8080
@@ -288,6 +297,23 @@ target.conf
     bucket=move-test
     prefix=
 ```
+
+## VM에서 실행하는 경우
+* source가 S3인 경우 source.conf/move_size의 값을 설정해 주어야 합니다.
+* VM에서 ifsmover를 이용하여 파일을 옮길 때, 파일 크기가 큰 경우 JVM의 메모리가 부족하여 실패할 수 있습니다. (로그가 남지 않음)
+```sh
+source.conf 
+    mountpoint=T:/source_data
+    endpoint=
+    access=
+    secret=
+    bucket=
+    prefix=
+    move_size=500   // 500M 이상의 파일은 나눠서 옮김
+```
+* 위의 move_size 설정을 사용하는 VM의 메모리 상황에 맞추어 조정해야합니다.
+
+
 #### 설정 파일 체크
 ```sh
 python ifs_mover -check -t=nas -source=source.conf -target=target.conf -thread=4
@@ -296,6 +322,7 @@ python ifs_mover -check -t=nas -source=source.conf -target=target.conf -thread=4
 ```sh
 python ifs_mover -t=nas -source=source.conf -target=target.conf -thread=4
 ```
+
 #### 주의사항
 * Windows에서는 ifs_mover 앞에 python을 붙여주어야 합니다.
 

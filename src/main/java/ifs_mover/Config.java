@@ -34,6 +34,7 @@ public class Config {
 	private String secretKey;
 	private String bucket;
 	private String prefix;
+	private String moveSize;
 	private String type;
 
 	private boolean isAWS;
@@ -45,6 +46,7 @@ public class Config {
 	private final String SECRET_KEY = "secret";
 	private final String BUCKET = "bucket";
 	private final String PREFIX = "prefix";
+	private final String MOVE_SIZE = "move_size";
 
 	private final String PROTOCOL = "http";
 
@@ -73,6 +75,7 @@ public class Config {
 		bucket = properties.getProperty(BUCKET);
 		prefix = properties.getProperty(PREFIX);
 		region = properties.getProperty(REGION);
+		moveSize = properties.getProperty(MOVE_SIZE);
 
 		if (mountPoint != null && !mountPoint.isEmpty() && !mountPoint.endsWith("/")) {
 			mountPoint += "/";
@@ -152,6 +155,10 @@ public class Config {
 
 	public String getRegion() {
 		return region;
+	}
+
+	public String getMoveSize() {
+		return moveSize;
 	}
 
 	public void setMountPoint(String mountPoint) {

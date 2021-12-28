@@ -187,18 +187,26 @@ public class IMOptions {
 		}
 		
 		isOption = line.hasOption("o");
-		if (isOption) option = line.getOptionValue("o");
+		if (isOption) {
+			option = line.getOptionValue("o");
+		}
 		
 		isCheck = line.hasOption("check");
 		
 		isStopId = line.hasOption("jobstop");
-		if (isStopId) stopId = line.getOptionValue("jobstop");
+		if (isStopId) {
+			stopId = line.getOptionValue("jobstop");
+		}
 		
 		isRemoveId = line.hasOption("jobremove");
-		if (isRemoveId) removeId = line.getOptionValue("jobremove");
+		if (isRemoveId) {
+			removeId = line.getOptionValue("jobremove");
+		}
 		
 		isRerunId = line.hasOption("rerun");
-		if (isRerunId) rerunId = line.getOptionValue("rerun");
+		if (isRerunId) {
+			rerunId = line.getOptionValue("rerun");
+		}
 		
 		isStatus = line.hasOption("status");
 		
@@ -248,6 +256,7 @@ public class IMOptions {
 		System.out.println("\t\t" + String.format("%-8s\t %s", "", "744, READ permission granted to AUTHENTICATED_USER and PUBLIC"));
 		System.out.println("\t\t" + String.format("%-8s %s", "time", "save file's C/M/A time in S3 meta"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-thread=", "thread count"));
+		System.out.println("\t" + String.format("%-20s\t%s", "-size=", "file size for multipart. default 500M"));
 		
 		System.out.println("Stop Job");
 		System.out.println("\t" + String.format("%-20s\t%s", "-jobstop=jobid", "stop a job in progress"));
@@ -280,6 +289,8 @@ public class IMOptions {
 		System.out.println("\t" + String.format("%-20s\t%s", "secret", "Secret Access Key"));
 		System.out.println("\t" + String.format("%-20s\t%s", "bucket", "bucket name"));
 		System.out.println("\t" + String.format("%-20s\t%s", "prefix", "PREFIX DIR name from which to start the MOVE"));
+		System.out.println("\t" + String.format("%-20s\t%s", "move_size", "The size of the file that you can move at once."));
+
 		System.out.println("target.conf");
 		System.out.println("\t" + String.format("%-20s\t%s", "endpoint", "http://ip:port"));
 		System.out.println("\t" + String.format("%-20s\t%s", "access", "Access Key ID"));
@@ -368,6 +379,13 @@ public class IMOptions {
 			return sourceConfig.getPrefix();
 		}
 		return null;
+	}
+
+	public int getSourceMoveSize() {
+		if (sourceConfig != null) {
+			return Integer.parseInt(sourceConfig.getMoveSize());
+		}
+		return 0;
 	}
 	
 	public String getTargetEndPoint() {
