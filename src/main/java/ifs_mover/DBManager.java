@@ -323,7 +323,7 @@ public class DBManager {
 			}
 			pstmt.setString(3, mTime);
 			pstmt.setLong(4, size);
-			if (versionId == null || versionId.isEmpty() || versionId.compareTo("null") == 0) {
+			if (versionId == null || versionId.isEmpty()) {
 				pstmt.setNull(5, java.sql.Types.NULL);
 			} else {
 				pstmt.setString(5, versionId);
@@ -366,7 +366,7 @@ public class DBManager {
 	public static boolean updateToMoveObjectVersion(String jobId, String mTime, long size, String path, String versionId) {
 		open();
 		String sql;
-		if (versionId == null || versionId.isEmpty() || versionId.compareTo("null") == 0) { 
+		if (versionId == null || versionId.isEmpty()) { 
 			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
 		} else {
 			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SQL_VERSIONID + versionId + "'";
@@ -417,7 +417,7 @@ public class DBManager {
 			}
 			pstmt.setString(3, mTime);
 			pstmt.setLong(4, size);
-			if (versionId == null || versionId.isEmpty() || versionId.compareTo("null") == 0) {
+			if (versionId == null || versionId.isEmpty()) {
 				pstmt.setNull(5, java.sql.Types.NULL);
 			} else {
 				pstmt.setString(5, versionId);
@@ -459,7 +459,7 @@ public class DBManager {
 	public static boolean updateRerunSkipObjectVersion(String jobId, String path, String versionId) {
 		open();
 		String sql;
-		if (versionId == null || versionId.isEmpty() || versionId.compareTo("null") == 0) {
+		if (versionId == null || versionId.isEmpty()) {
 			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
 		} else {
 			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SQL_VERSIONID + versionId + "'";
@@ -690,7 +690,7 @@ public class DBManager {
 		open();
 		Map<String, String> info = new HashMap<String, String>();	
 		String sql;
-		if (versionId == null || versionId.isEmpty() || versionId.compareTo("null") == 0) {
+		if (versionId == null || versionId.isEmpty()) {
 			sql = "SELECT object_state, mtime FROM JOB_" + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
 		} else {
 			sql = "SELECT object_state, mtime FROM JOB_" + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID + versionId + "'";
@@ -769,7 +769,7 @@ public class DBManager {
 	public static synchronized boolean updateObjectVersionMove(String jobId, String path, String versionId) {
 		open();
 		String sql;
-		if (versionId == null || versionId.isEmpty() || versionId.compareTo("null") == 0) {
+		if (versionId == null || versionId.isEmpty()) {
 			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2 WHERE path = ? and version_id is null";
 		} else {
 			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2 WHERE path = ? and version_id = ?";
@@ -777,7 +777,7 @@ public class DBManager {
 
 		try (PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, path);
-			if (versionId != null && !versionId.isEmpty() && versionId.compareTo("null") != 0) {
+			if (versionId != null && !versionId.isEmpty()) {
 				pstmt.setString(2, versionId);
 			} 
 			if (pstmt.executeUpdate() == 1) {
@@ -793,14 +793,14 @@ public class DBManager {
 	public static synchronized boolean updateObjectVersionMoveComplete(String jobId, String path, String versionId) {
 		open();
 		String sql;
-		if (versionId == null || versionId.isEmpty() || versionId.compareTo("null") == 0) {
+		if (versionId == null || versionId.isEmpty()) {
 			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3 WHERE path = ? and version_id is null";
 		} else {
 			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3 WHERE path = ? and version_id = ?";
 		}
 		try (PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, path);
-			if (versionId != null && !versionId.isEmpty() && versionId.compareTo("null") != 0) {
+			if (versionId != null && !versionId.isEmpty()) {
 				pstmt.setString(2, versionId);
 			} 
 			if (pstmt.executeUpdate() == 1) {
@@ -816,7 +816,7 @@ public class DBManager {
 	public static synchronized boolean updateObjectVersionMoveEventFailed(String jobId, String path, String versionId, String errorCode, String errorMessage) {
 		open();
 		String sql;
-		if (versionId == null || versionId.isEmpty() || versionId.compareTo("null") == 0) {
+		if (versionId == null || versionId.isEmpty()) {
 			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 4, error_date = datetime('now', 'localtime'), error_code = ?, error_desc = ? WHERE path = ? and version_id is null";
 		} else {
 			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 4, error_date = datetime('now', 'localtime'), error_code = ?, error_desc = ? WHERE path = ? and version_id = ?";
@@ -826,7 +826,7 @@ public class DBManager {
 			pstmt.setString(1, errorCode);
 			pstmt.setString(2, errorMessage);
 			pstmt.setString(3, path);
-			if (versionId != null && !versionId.isEmpty() && versionId.compareTo("null") != 0) {
+			if (versionId != null && !versionId.isEmpty()) {
 				pstmt.setString(4, versionId);
 			} 
 			if (pstmt.executeUpdate() == 1) {
@@ -862,7 +862,32 @@ public class DBManager {
 
 	public static synchronized List<Map<String, String>> getToMoveObjectsInfo(String jobId, long sequence, long limit) {
 		open();
-		String sql = "SELECT path, isfile, size, version_id, isdelete, islatest FROM JOB_" + jobId + "_OBJECTS WHERE object_state = 1 and sequence > " + sequence + " ORDER BY sequence LIMIT " + limit;
+		String sql = "SELECT path, isfile, size, version_id, isdelete, islatest FROM JOB_" + jobId + "_OBJECTS WHERE object_state = 1 and isdelete = 0 and sequence > " + sequence + " ORDER BY sequence LIMIT " + limit;
+		List<Map<String, String>> list = new ArrayList<Map<String, String>>();
+		try (Statement stmt = con.createStatement();
+			 ResultSet rs = stmt.executeQuery(sql);) {
+	   		while (rs.next()) {
+		   		Map<String, String> info = new HashMap<String, String>();
+		   
+		   		info.put("path", rs.getString(1));
+		   		info.put("isFile", rs.getString(2));
+		   		info.put("size", rs.getString(3));
+		   		info.put("versionId", rs.getString(4));
+		   		info.put("isDelete", rs.getString(5));
+				info.put("isLatest", rs.getString(6));
+				
+		   		list.add(info);
+			}
+	   	} catch (SQLException e) {
+	   		logger.error(e.getMessage());
+   		}
+   
+   		return list;
+	}
+
+	public static synchronized List<Map<String, String>> getToDeleteObjectsInfo(String jobId, long sequence, long limit) {
+		open();
+		String sql = "SELECT path, isfile, size, version_id, isdelete, islatest FROM JOB_" + jobId + "_OBJECTS WHERE object_state = 1 and isdelete = 1 and sequence > " + sequence + " ORDER BY sequence LIMIT " + limit;
 		List<Map<String, String>> list = new ArrayList<Map<String, String>>();
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {

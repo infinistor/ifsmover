@@ -397,6 +397,7 @@ public class ObjectMover {
 				isVersioning = true;
 				targetS3.setBucketVersioningConfiguration(new SetBucketVersioningConfigurationRequest(targetConfig.getBucket(), 
 					new BucketVersioningConfiguration(BucketVersioningConfiguration.ENABLED)));
+				logger.info("set target-{} versioning is Enabled", targetConfig.getBucket());
 			}
 			
 			if (isRerun) {
@@ -503,48 +504,116 @@ public class ObjectMover {
 			} 
 			
 			if (isDoneDistribute && executor.isTerminated()) {
-				for (Map<String, String> movedObject : movedObjectList) {
-					path = movedObject.get("path");
-					versionId = movedObject.get("versionId");
+				deleteMove();
 
-					DBManager.updateObjectVersionMoveComplete(jobId, path, versionId);
-				}
-
-				for (Map<String, Long> movedJob : movedJobList) {
-					long size = movedJob.get("size").longValue();
-
-					DBManager.updateJobMoved(jobId, size);
-				}
-
-				for (Map<String, String> failedObject : failedObjectList) {
-					path = failedObject.get("path");
-					versionId = failedObject.get("versionId");
-
-					DBManager.updateObjectVersionMoveEventFailed(jobId, path, versionId, "", "retry failure");
-				}
-
-				for (Map<String, Long> failedJob : failedJobList) {
-					long size = failedJob.get("size").longValue();
-					DBManager.updateJobFailedInfo(jobId, size);
-				}
-
-				if (isVersioning) {
-					try {
-						targetS3.setBucketVersioningConfiguration(new SetBucketVersioningConfigurationRequest(targetConfig.getBucket(), sourceS3VersionConfig));
-					} catch (AmazonServiceException ase) {
-						logger.warn("{} {}", ase.getErrorCode(), ase.getErrorMessage());
-					} catch (SdkClientException  ace) {
-						logger.warn("{}", ace.getMessage());
+				if (isDoneDistribute && executor.isTerminated()) {
+					for (Map<String, String> movedObject : movedObjectList) {
+						path = movedObject.get("path");
+						versionId = movedObject.get("versionId");
+	
+						DBManager.updateObjectVersionMoveComplete(jobId, path, versionId);
 					}
+	
+					for (Map<String, Long> movedJob : movedJobList) {
+						long size = movedJob.get("size").longValue();
+	
+						DBManager.updateJobMoved(jobId, size);
+					}
+	
+					for (Map<String, String> failedObject : failedObjectList) {
+						path = failedObject.get("path");
+						versionId = failedObject.get("versionId");
+	
+						DBManager.updateObjectVersionMoveEventFailed(jobId, path, versionId, "", "retry failure");
+					}
+	
+					for (Map<String, Long> failedJob : failedJobList) {
+						long size = failedJob.get("size").longValue();
+						DBManager.updateJobFailedInfo(jobId, size);
+					}
+	
+					if (isVersioning) {
+						try {
+							targetS3.setBucketVersioningConfiguration(new SetBucketVersioningConfigurationRequest(targetConfig.getBucket(), sourceS3VersionConfig));
+						} catch (AmazonServiceException ase) {
+							logger.warn("{} {}", ase.getErrorCode(), ase.getErrorMessage());
+						} catch (SdkClientException  ace) {
+							logger.warn("{}", ace.getMessage());
+						}
+					}
+	
+					return;
 				}
-
-				return;
 			} else {
 				try {
 					Thread.sleep(10);
 				} catch (InterruptedException e) {
 					logger.error(e.getMessage());
 				}
+			}
+		}
+	}
+
+	private void deleteMove() {
+		// delete work
+		String finalPath = "";
+		String path = "";
+		String versionId = "";
+		boolean isDoneDistribute = false;
+		long sequence = 0;
+		long limit = 100;
+
+		ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+		List<Map<String, String>> list = null;
+		List<Map<String, String>> jobList = null;
+
+		sequence = 0;
+		isDoneDistribute = false;
+
+		long maxSequence = DBManager.getMaxSequence(jobId);
+
+		while (true) {
+			if (!isDoneDistribute) {
+				list = DBManager.getToDeleteObjectsInfo(jobId, sequence, limit);
+				if (list.isEmpty() && sequence >= maxSequence) {
+					if (jobList != null && !jobList.isEmpty()) {
+						Mover mover = new Mover(jobList);
+						executor.execute(mover);
+					}
+					isDoneDistribute = true;
+					executor.shutdown();
+					continue;
+				}
+				sequence += limit;
+
+				for (Map<String, String> jobInfo : list) {
+					path = jobInfo.get("path");
+					versionId = jobInfo.get("versionId");
+
+					retryUpdateObjectVersionMove(path, versionId);
+					
+					if (path.compareTo(finalPath) != 0) {
+						finalPath = path;
+						if (jobList == null) {
+							jobList = new ArrayList<Map<String, String>>();
+							jobList.add(jobInfo);
+						} else {
+							Mover mover = new Mover(jobList);
+							executor.execute(mover);
+							jobList = new ArrayList<Map<String, String>>();
+							jobList.add(jobInfo);
+						}
+					} else {
+						if (jobList == null) {
+							jobList = new ArrayList<Map<String, String>>();
+						}
+						jobList.add(jobInfo);
+					}
+				}
+			}
+
+			if (isDoneDistribute && executor.isTerminated()) {
+				return;
 			}
 		}
 	}
@@ -1046,17 +1115,13 @@ public class ObjectMover {
 				do {
 					listing = sourceS3.listVersions(request);
 					for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
-						String versionId = versionSummary.getVersionId();
-						if (versionId.compareToIgnoreCase("null") == 0) {
-							versionId = "";
-						}
-						Map<String, String> info = DBManager.infoExistObjectVersion(jobId, versionSummary.getKey(), versionId);
+						Map<String, String> info = DBManager.infoExistObjectVersion(jobId, versionSummary.getKey(), versionSummary.getVersionId());
 						if (info.isEmpty()) {
 							retryInsertRerunMoveObjectVersion(versionSummary.getKey().charAt(versionSummary.getKey().length() - 1) != '/', 
 								versionSummary.getLastModified().toString(), 
 								versionSummary.getSize(), 
 								versionSummary.getKey(), 
-								versionId, 
+								versionSummary.getVersionId(), 
 								versionSummary.isDeleteMarker(), 
 								versionSummary.isLatest());
 							retryUpdateJobRerunInfo(versionSummary.getSize());
@@ -1064,10 +1129,10 @@ public class ObjectMover {
 							state = Integer.parseInt(info.get("object_state"));
 							String mTime = info.get("mtime");
 							if (state == 3 && mTime.compareTo(versionSummary.getLastModified().toString()) == 0) {	
-								retryUpdateRerunSkipObjectVersion(versionSummary.getKey(), versionId);
+								retryUpdateRerunSkipObjectVersion(versionSummary.getKey(), versionSummary.getVersionId());
 								retryUpdateJobRerunSkipInfo(versionSummary.getSize());
 							} else {
-								retryUpdateToMoveObjectVersion(versionSummary.getLastModified().toString(), versionSummary.getSize(), versionSummary.getKey(), versionId);
+								retryUpdateToMoveObjectVersion(versionSummary.getLastModified().toString(), versionSummary.getSize(), versionSummary.getKey(), versionSummary.getVersionId());
 								retryUpdateJobRerunInfo(versionSummary.getSize());
 							}
 						}
@@ -1341,11 +1406,7 @@ public class ObjectMover {
 							}
 							targetS3.completeMultipartUpload(new CompleteMultipartUploadRequest(targetConfig.getBucket(), targetObject, uploadId, partList));
 							if (versionId != null && !versionId.isEmpty()) {
-								if (versionId.compareToIgnoreCase("null") == 0) {
-									logger.info("move success : {}", sourcePath);
-								} else {
-									logger.info("move success : {}:{}", sourcePath, versionId);
-								}
+								logger.info("move success : {}:{}", sourcePath, versionId);
 							} else {
 								logger.info("move success : {}", sourcePath);
 							}
@@ -1364,29 +1425,21 @@ public class ObjectMover {
 							putObjectRequest.getRequestClientOptions().setReadLimit(1024 * 1024 * 1024);
 							targetS3.putObject(putObjectRequest);
 							if (versionId != null && !versionId.isEmpty()) {
-								if (versionId.compareToIgnoreCase("null") == 0) {
-									logger.info("move success : {}", sourcePath);
-								} else {
-									logger.info("move success : {}:{}", sourcePath, versionId);
-								}
+								logger.info("move success : {}:{}", sourcePath, versionId);
 							} else {
 								logger.info("move success : {}", sourcePath);
 							}
 						}
 					} else {
-						GetObjectMetadataRequest getObjectMetadataRequest = new GetObjectMetadataRequest(sourceConfig.getBucket(), sourcePath);
-						meta = sourceS3.getObjectMetadata(getObjectMetadataRequest);
+						meta = new ObjectMetadata();
+						meta.setContentLength(0);
 						is = new ByteArrayInputStream(new byte[0]);
 
 						PutObjectRequest putObjectRequest;
 						putObjectRequest = new PutObjectRequest(targetConfig.getBucket(), targetObject, is, meta);
 						targetS3.putObject(putObjectRequest);
 						if (versionId != null && !versionId.isEmpty()) {
-							if (versionId.compareToIgnoreCase("null") == 0) {
-								logger.info("move success : {}", sourcePath);
-							} else {
-								logger.info("move success : {}:{}", sourcePath, versionId);
-							}
+							logger.info("move success : {}:{}", sourcePath, versionId);
 						} else {
 							logger.info("move success : {}", sourcePath);
 						}
