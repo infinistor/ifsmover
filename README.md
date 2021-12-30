@@ -3,12 +3,12 @@
 ## 개요
 
 ### 용도
-* 기존 NAS나 S3 호환 Object Storage에 있는 파일 및 오브젝트를 InfiniStor로 이관
+* 기존 NAS나 S3 호환 Object Storage에 있는 파일 및 오브젝트를 InfiniStor 또는 KSAN으로 이관
 
 
 ### 주요 기능
-* NAS(SMB/NFS) / Local 파일시스템의 파일을 InfiniStor로 이관 지원
-* AWS S3의 오브젝트를 InfiniStor로 이관 지원
+* NAS(SMB/NFS) / Local 파일시스템의 파일을 InfiniStor 또는 KSAN으로 이관 지원
+* AWS S3의 오브젝트를 InfiniStor 또는 KSAN으로 이관 지원
 * NAS(SMB/NFS) / Local 파일시스템의 파일을 AWS S3로 이관 지원
 * 재수행 옵션(-rerun)을 통해 소스 경로의 신규 및 수정된 오브젝트 및 파일만 추가로 이관하는 기능 제공
 * 상태 확인 옵션(-status)을 통해 현재 수행 중인 이관 작업의 상태를 실시간으로 모니터링 가능 
@@ -72,12 +72,12 @@ or
 ifs_mover -check -t=s3 -source=source.conf -target=target.conf
 ```
 
-### AWS S3 -> InfiniStor 이관 작업 등록 및 실행
+### AWS S3 -> InfiniStor/KSAN 이관 작업 등록 및 실행
 ```sh
 ifs_mover -t=s3 -source=source.conf -target=target.conf -thread=4
 ```
 
-### NAS -> InfiniStor 이관 작업 등록 및 실행
+### NAS -> InfiniStor/KSAN 이관 작업 등록 및 실행
 ```sh
 ifs_mover -t=nas -source=source.conf -target=target.conf -thread=4
 ```
@@ -250,24 +250,24 @@ target.conf
 ```
 
 ### 실행 예시
-#### Job1 - NAS to InfiniStor
+#### Job1 - NAS to InfiniStor/KSAN
 * NAS 마운트 포인트(/mnt/mover/moveu/)에서 InfiniStor(ifs-mover-test)로 전체 데이터 마이그레이션 수행
 ![](/images/sample1.png)
 
-#### Job2 - InfiniStor to InfiniStor
+#### Job2 - InfiniStor to InfiniStor/KSAN
 * InfiniStor(ifs-mover-test)에서 InfiniStor(ifs-mover-test-target)로 전체 데이터 마이그레이션 수행
 ![](/images/sample2.png)
 
-#### Job3 - InfiniStor to InfiniStor
+#### Job3 - InfiniStor to InfiniStor/KSAN
 * InfiniStor(ifs-mover-test-target)에서 InfiniStor(ifs-mover-test-version-target/version)로 전체 데이터 마이그레이션 수행 (Version 정보 포함)
 ![](/images/sample3.png)
 ![](/images/sample4.png)
 
-#### Job4 - NAS to InfiniStor (RERUN)
+#### Job4 - NAS to InfiniStor/KSAN (RERUN)
 * NAS 마운트 포인트(/mnt/mover/moveu/aws/)에서 AWS S3(new-bucket-test-mover-07-20)로 추가된 데이터만 마이그레이션 수행
 ![](/images/sample5.png)
 
-#### Job5 - AWS S3 to InfiniStor
+#### Job5 - AWS S3 to InfiniStor/KSAN
 * AWS S3(new-bucket-test-mover-07-20)에서 InfiniStor(ifs-mover-test-version-target/version/from-aws0805)로 전체 데이터 마이그레이션 수행
 ![](/images/sample6.png)
 
