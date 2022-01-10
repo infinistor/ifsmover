@@ -36,6 +36,16 @@ public class Config {
 	private String prefix;
 	private String moveSize;
 	private String type;
+	
+	// for openstack swift
+	private String userName;
+	private String apiKey;
+	private String authEndpoint;
+	private String domainId;
+	private String domainName;
+	private String projectId;
+	private String projectName;
+	private String container;
 
 	private boolean isAWS;
 
@@ -47,6 +57,16 @@ public class Config {
 	private final String BUCKET = "bucket";
 	private final String PREFIX = "prefix";
 	private final String MOVE_SIZE = "move_size";
+
+	// for openstack swift support
+	private final String USER_NAME = "user_name";
+	private final String API_KEY = "api_key";
+	private final String AUTHENTICATION_SERVICE = "auth_endpoint";
+	private final String DOMAIN_ID = "domain_id";
+	private final String DOMAIN_NAME = "domain_name";
+	private final String PROJECT_ID = "project_id";
+	private final String PROJECT_NAME = "project_name";
+	private final String CONTAINER = "container";
 
 	private final String PROTOCOL = "http";
 
@@ -76,6 +96,14 @@ public class Config {
 		prefix = properties.getProperty(PREFIX);
 		region = properties.getProperty(REGION);
 		moveSize = properties.getProperty(MOVE_SIZE);
+		userName = properties.getProperty(USER_NAME);
+		apiKey = properties.getProperty(API_KEY);
+		authEndpoint = properties.getProperty(AUTHENTICATION_SERVICE);
+		domainId = properties.getProperty(DOMAIN_ID);
+		domainName = properties.getProperty(DOMAIN_NAME);
+		projectId = properties.getProperty(PROJECT_ID);
+		projectName = properties.getProperty(PROJECT_NAME);
+		container = properties.getProperty(CONTAINER);
 
 		if (mountPoint != null && !mountPoint.isEmpty() && !mountPoint.endsWith("/")) {
 			mountPoint += "/";
@@ -159,6 +187,38 @@ public class Config {
 
 	public String getMoveSize() {
 		return moveSize;
+	}
+
+	public String getUserName() {
+		return userName;
+	}
+
+	public String getApiKey() {
+		return apiKey;
+	}
+
+	public String getAuthEndpoint() {
+		return authEndpoint;
+	}
+
+	public String getDomainId() {
+		return domainId;
+	}
+
+	public String getDomainName() {
+		return domainName;
+	}
+
+	public String getProjectId() {
+		return projectId;
+	}
+
+	public String getProjectName() {
+		return projectName;
+	}
+
+	public String getContainer() {
+		return container;
 	}
 
 	public void setMountPoint(String mountPoint) {

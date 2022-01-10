@@ -266,6 +266,9 @@ public class DBManager {
 				+ "'skip_check' INTEGER DEFAULT 0,\n"
 				+ "'mtime' TEXT NOT NULL,\n"
 				+ "'version_id' TEXT,\n"
+				+ "'etag' TEXT,\n"
+				+ "'multipart_info' TEXT,\n"
+				+ "'tag' TEXT,\n"
 				+ "'isdelete' INTEGER DEFAULT 0,\n"
 				+ "'islatest' INTEGER DEFAULT 0,\n"
 				+ "'error_date' TEXT,\n"
@@ -311,33 +314,57 @@ public class DBManager {
 		return false;
 	}
 
-	public static boolean insertMoveObjectVersioning(String jobId, boolean isFile, String mTime, long size, String path, String versionId, boolean isDelete, boolean isLatest) {
+	public static boolean insertMoveObjectVersioning(String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest) {
 		open();
-		String sql = INSERT_JOB_ID + jobId + "_OBJECTS (path, object_state, isfile, mtime, size, version_id, isdelete, islatest) VALUES(?, 1, ?, ?, ?, ?, ?, ?)";
+		String sql = INSERT_JOB_ID + jobId + "_OBJECTS (path, object_state, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 		try  (PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, path);
+			
 			if (isFile) {
 				pstmt.setInt(2, 1);
 			} else {
 				pstmt.setInt(2, 0);
 			}
+			
 			pstmt.setString(3, mTime);
 			pstmt.setLong(4, size);
+			
 			if (versionId == null || versionId.isEmpty()) {
 				pstmt.setNull(5, java.sql.Types.NULL);
 			} else {
 				pstmt.setString(5, versionId);
 			}
+			
+			if (etag == null || etag.isEmpty()) {
+				pstmt.setNull(6, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(6, etag);
+			}
+			
+			if (multipartInfo == null || multipartInfo.isEmpty()) {
+				pstmt.setNull(7, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(7, multipartInfo);
+			}
+
+			if (tag == null || tag.isEmpty()) {
+				pstmt.setNull(8, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(8, tag);
+			}
+
 			if (isDelete) {
-				pstmt.setInt(6, 1);
+				pstmt.setInt(9, 1);
 			} else {
-				pstmt.setInt(6, 0);
+				pstmt.setInt(9, 0);
 			}
+			
 			if (isLatest) {
-				pstmt.setInt(7, 1);
+				pstmt.setInt(10, 1);
 			} else {
-				pstmt.setInt(7, 0);
+				pstmt.setInt(10, 0);
 			}
+			
 			if (pstmt.executeUpdate() == 1) {
 				return true;
 			}
@@ -405,33 +432,57 @@ public class DBManager {
 		return false;
 	}
 
-	public static boolean insertRerunMoveObjectVersion(String jobId, boolean isFile, String mTime, long size, String path, String versionId, boolean isDelete, boolean isLatest) {
+	public static boolean insertRerunMoveObjectVersion(String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest) {
 		open();
-		String sql = INSERT_JOB_ID + jobId + "_OBJECTS (path, object_state, skip_check, isfile, mtime, size, version_id, isdelete, islatest) VALUES(?, 1, 1, ?, ?, ?, ?, ?, ?)";
+		String sql = INSERT_JOB_ID + jobId + "_OBJECTS (path, object_state, skip_check, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 		try(PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, path);
+			
 			if (isFile) {
 				pstmt.setInt(2, 1);
 			} else {
 				pstmt.setInt(2, 0);
 			}
+			
 			pstmt.setString(3, mTime);
 			pstmt.setLong(4, size);
+			
 			if (versionId == null || versionId.isEmpty()) {
 				pstmt.setNull(5, java.sql.Types.NULL);
 			} else {
 				pstmt.setString(5, versionId);
 			}
+
+			if (etag == null || etag.isEmpty()) {
+				pstmt.setNull(6, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(6, etag);
+			}
+			
+			if (multipartInfo == null || multipartInfo.isEmpty()) {
+				pstmt.setNull(7, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(7, multipartInfo);
+			}
+
+			if (tag == null || tag.isEmpty()) {
+				pstmt.setNull(8, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(8, tag);
+			}
+
 			if (isDelete) {
-				pstmt.setInt(6, 1);
+				pstmt.setInt(9, 1);
 			} else { 
-				pstmt.setInt(6, 0);
+				pstmt.setInt(9, 0);
 			}
+			
 			if (isLatest) {
-				pstmt.setInt(7, 1);
+				pstmt.setInt(10, 1);
 			} else { 
-				pstmt.setInt(7, 0);
+				pstmt.setInt(10, 0);
 			}
+			
 			if (pstmt.executeUpdate() == 1) {
 				return true;
 			}
@@ -862,7 +913,7 @@ public class DBManager {
 
 	public static synchronized List<Map<String, String>> getToMoveObjectsInfo(String jobId, long sequence, long limit) {
 		open();
-		String sql = "SELECT path, isfile, size, version_id, isdelete, islatest FROM JOB_" + jobId + "_OBJECTS WHERE object_state = 1 and isdelete = 0 and sequence > " + sequence + " ORDER BY sequence LIMIT " + limit;
+		String sql = "SELECT path, isfile, size, version_id, etag, multipart_info, tag, isdelete, islatest FROM JOB_" + jobId + "_OBJECTS WHERE object_state = 1 and isdelete = 0 and sequence > " + sequence + " ORDER BY sequence LIMIT " + limit;
 		List<Map<String, String>> list = new ArrayList<Map<String, String>>();
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
@@ -873,8 +924,11 @@ public class DBManager {
 		   		info.put("isFile", rs.getString(2));
 		   		info.put("size", rs.getString(3));
 		   		info.put("versionId", rs.getString(4));
-		   		info.put("isDelete", rs.getString(5));
-				info.put("isLatest", rs.getString(6));
+				info.put("etag", rs.getString(5));
+				info.put("multipart_info", rs.getString(6));
+				info.put("tag", rs.getString(7));
+		   		info.put("isDelete", rs.getString(8));
+				info.put("isLatest", rs.getString(9));
 				
 		   		list.add(info);
 			}
@@ -887,7 +941,7 @@ public class DBManager {
 
 	public static synchronized List<Map<String, String>> getToDeleteObjectsInfo(String jobId, long sequence, long limit) {
 		open();
-		String sql = "SELECT path, isfile, size, version_id, isdelete, islatest FROM JOB_" + jobId + "_OBJECTS WHERE object_state = 1 and isdelete = 1 and sequence > " + sequence + " ORDER BY sequence LIMIT " + limit;
+		String sql = "SELECT path, isfile, size, version_id, etag, multipart_info, tag, isdelete, islatest FROM JOB_" + jobId + "_OBJECTS WHERE object_state = 1 and isdelete = 1 and sequence > " + sequence + " ORDER BY sequence LIMIT " + limit;
 		List<Map<String, String>> list = new ArrayList<Map<String, String>>();
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
@@ -898,8 +952,11 @@ public class DBManager {
 		   		info.put("isFile", rs.getString(2));
 		   		info.put("size", rs.getString(3));
 		   		info.put("versionId", rs.getString(4));
-		   		info.put("isDelete", rs.getString(5));
-				info.put("isLatest", rs.getString(6));
+				info.put("etag", rs.getString(5));
+				info.put("multipartInfo", rs.getString(6));
+				info.put("tag", rs.getString(7));
+		   		info.put("isDelete", rs.getString(8));
+				info.put("isLatest", rs.getString(9));
 				
 		   		list.add(info);
 			}

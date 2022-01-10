@@ -54,8 +54,9 @@ public class IMOptions {
 	private String rerunId;
 	private int threadCount;
 	
-	private final String NAS = "nas";
+	private final String FILE = "file";
 	private final String S3 = "s3";
+	private final String OS = "swift";
 	private final String EA = "ea";
 	private final String PERM = "perm";
 	private final String TIME = "time";
@@ -149,9 +150,11 @@ public class IMOptions {
 		isType = line.hasOption("t");
 		if (isType) {
 			type = line.getOptionValue("t");
-			if (NAS.compareToIgnoreCase(type) != 0) {
+			if (FILE.compareToIgnoreCase(type) != 0) {
 				if (S3.compareToIgnoreCase(type) != 0) {
-					printUsage();
+					if (OS.compareToIgnoreCase(type) != 0) {
+						printUsage();
+					}
 				}
 			}
 		}
@@ -247,16 +250,15 @@ public class IMOptions {
 		
 		System.out.println("Usage : ifs_mover [OPTION] ...");
 		System.out.println("Move Objects");
-		System.out.println("\t" + String.format("%-20s\t%s", "-t=nas|s3","source type, NAS or S3"));
+		System.out.println("\t" + String.format("%-20s\t%s", "-t=file|s3|swift","source type, File(NAS etc) or S3 or Swift"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-source=source.conf", "source configuration file path"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-target=target.conf", "target configuration file path"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-o=ea,perm,time", "object meta info"));
 		System.out.println("\t\t" + String.format("%-8s\t %s", "ea", "save fils's extented attribute in S3 meta"));
 		System.out.println("\t\t" + String.format("%-8s\t %s", "perm", "save file's permission(rwxrwxrwx) in S3 meta"));
 		System.out.println("\t\t" + String.format("%-8s\t %s", "", "744, READ permission granted to AUTHENTICATED_USER and PUBLIC"));
-		System.out.println("\t\t" + String.format("%-8s %s", "time", "save file's C/M/A time in S3 meta"));
+		System.out.println("\t\t" + String.format("%-8s\t %s", "time", "save file's C/M/A time in S3 meta"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-thread=", "thread count"));
-		System.out.println("\t" + String.format("%-20s\t%s", "-size=", "file size for multipart. default 500M"));
 		
 		System.out.println("Stop Job");
 		System.out.println("\t" + String.format("%-20s\t%s", "-jobstop=jobid", "stop a job in progress"));
@@ -290,6 +292,14 @@ public class IMOptions {
 		System.out.println("\t" + String.format("%-20s\t%s", "bucket", "bucket name"));
 		System.out.println("\t" + String.format("%-20s\t%s", "prefix", "PREFIX DIR name from which to start the MOVE"));
 		System.out.println("\t" + String.format("%-20s\t%s", "move_size", "The size of the file that you can move at once."));
+		System.out.println("\t" + String.format("%-20s\t%s", "user_name", "user name for swift"));
+		System.out.println("\t" + String.format("%-20s\t%s", "api_key", "api key for swift"));
+		System.out.println("\t" + String.format("%-20s\t%s", "auth_endpoint", "http://ip:port/v3, authentication endpoint for swift"));
+		System.out.println("\t" + String.format("%-20s\t%s", "domain_id", "domain id for swift"));
+		System.out.println("\t" + String.format("%-20s\t%s", "domain_name", "domain name for swift"));
+		System.out.println("\t" + String.format("%-20s\t%s", "project_id", "project id for swift"));
+		System.out.println("\t" + String.format("%-20s\t%s", "project_name", "project name for swift"));
+		System.out.println("\t" + String.format("%-20s\t%s", "container", "container name for swift"));
 
 		System.out.println("target.conf");
 		System.out.println("\t" + String.format("%-20s\t%s", "endpoint", "http://ip:port"));

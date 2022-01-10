@@ -15,6 +15,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -22,6 +23,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -31,6 +33,28 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import org.apache.commons.io.FilenameUtils;
+import org.json.simple.JSONObject;
+import org.openstack4j.api.OSClient;
+import org.openstack4j.api.OSClient.OSClientV2;
+import org.openstack4j.api.OSClient.OSClientV3;
+import org.openstack4j.api.exceptions.AuthenticationException;
+import org.openstack4j.api.exceptions.ClientResponseException;
+import org.openstack4j.api.exceptions.ConnectionException;
+import org.openstack4j.api.exceptions.ResponseException;
+import org.openstack4j.api.exceptions.ServerResponseException;
+import org.openstack4j.model.common.DLPayload;
+import org.openstack4j.model.common.Identifier;
+import org.openstack4j.model.common.Payload;
+import org.openstack4j.model.common.Payloads;
+import org.openstack4j.model.common.header.Range;
+import org.openstack4j.model.identity.v2.Access;
+import org.openstack4j.model.identity.v3.Token;
+import org.openstack4j.model.storage.block.options.DownloadOptions;
+import org.openstack4j.model.storage.object.SwiftContainer;
+import org.openstack4j.model.storage.object.SwiftObject;
+import org.openstack4j.model.storage.object.options.ObjectListOptions;
+import org.openstack4j.model.storage.object.options.ObjectLocation;
+import org.openstack4j.openstack.OSFactory;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
@@ -42,9 +66,10 @@ import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.S3ClientOptions;
+import com.amazonaws.services.s3.model.BucketTaggingConfiguration;
 import com.amazonaws.services.s3.model.BucketVersioningConfiguration;
 import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
+import com.amazonaws.services.s3.model.CompleteMultipartUploadResult;
 import com.amazonaws.services.s3.model.GetObjectMetadataRequest;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
@@ -53,15 +78,24 @@ import com.amazonaws.services.s3.model.ListObjectsRequest;
 import com.amazonaws.services.s3.model.ListVersionsRequest;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.ObjectTagging;
 import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.PutObjectRequest;
+import com.amazonaws.services.s3.model.PutObjectResult;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.model.S3VersionSummary;
 import com.amazonaws.services.s3.model.SetBucketVersioningConfigurationRequest;
+import com.amazonaws.services.s3.model.SetObjectTaggingRequest;
+import com.amazonaws.services.s3.model.Tag;
+import com.amazonaws.services.s3.model.TagSet;
 import com.amazonaws.services.s3.model.UploadPartRequest;
 import com.amazonaws.services.s3.model.UploadPartResult;
 import com.amazonaws.services.s3.model.VersionListing;
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.CharMatcher;
 
 public class ObjectMover {
 	private static final Logger logger = LoggerFactory.getLogger(ObjectMover.class);
@@ -69,7 +103,7 @@ public class ObjectMover {
 	private Config sourceConfig;
 	private Config targetConfig;
 	private int threadCount;
-	private boolean isNAS;
+	private String type;
 	private boolean isSourceAWS;
 	private boolean isTargetAWS;
 	private boolean isRerun;
@@ -80,10 +114,34 @@ public class ObjectMover {
 	private String pathNAS;
 	private BucketVersioningConfiguration sourceS3VersionConfig;
 
+	// for openstack swift
+	private Identifier domainIdentifier;
+	private Identifier projectIdentifier;
+	private OSClientV3 clientV3;
+
 	private static final int RETRY_COUNT = 3;
 	private static final String NO_SUCH_KEY = "NoSuchKey";
 	private static final String NOT_FOUND = "Not Found";
 	private static final long MEGA_BYTES = 1024 * 1024;
+	private static final long GIGA_BYTES = 1024 * 1024 * 1024;
+	private static final long ONES_MOVE_BYTES = 1024 * 1024 * 500;
+	private static final String TYPE_FILE = "file";
+	private static final String TYPE_S3 = "s3";
+	private static final String TYPE_OS = "swift"; // openstack swift
+	private static final String X_STORAGE_POLICY = "X-Storage-Policy";
+	private static final String MULTIPART_INFO = "X-Object-Manifest";
+	private static final String X_TIMESTAMP = "X-Timestamp";
+	private static final String X_OPENSTACK_REQUEST_ID = "X-Openstack-Request-Id";
+	private static final String X_TRANS_ID = "X-Trans-Id";
+	private static final String X_OBJECT_META_FILE = "X-Object-Meta-File";
+	private static final String MTIME = "Mtime";
+	private static final String SEGMENTS = "_segments";
+	private static final String DEFAULT_ETAG = "d41d8cd98f00b204e9800998ecf8427e";
+	private static final CharMatcher VALID_BUCKET_CHAR =
+			CharMatcher.inRange('a', 'z')
+			.or(CharMatcher.inRange('0', '9'))
+			.or(CharMatcher.is('-'))
+			.or(CharMatcher.is('.'));
 
 	private static final List<Map<String, String>>movedObjectList = new ArrayList<Map<String, String>>();
 	private static final List<Map<String, Long>>movedJobList = new ArrayList<Map<String, Long>>();
@@ -96,7 +154,7 @@ public class ObjectMover {
 		private Config sourceConfig;
 		private Config targetConfig;
 		private int threadCount;
-		private boolean isNAS;
+		private String type;
 		private boolean isSourceAWS;
 		private boolean isTargetAWS;
 		private boolean isRerun;
@@ -120,9 +178,9 @@ public class ObjectMover {
 			this.threadCount = count;
 			return this;
 		}
-		
-		public Builder isNAS(boolean isNAS) {
-			this.isNAS = isNAS;
+
+		public Builder type(String type) {
+			this.type = type;
 			return this;
 		}
 		
@@ -150,7 +208,7 @@ public class ObjectMover {
 		sourceConfig = builder.sourceConfig;
 		targetConfig = builder.targetConfig;
 		threadCount = builder.threadCount;
-		isNAS = builder.isNAS;
+		type = builder.type;
 		isSourceAWS = builder.isSourceAWS;
 		isTargetAWS = builder.isTargetAWS;
 		isRerun = builder.isRerun;
@@ -176,7 +234,7 @@ public class ObjectMover {
 			}
 		}
 		
-		if (targetConfig.getBucket() == null || targetConfig.getBucket().isEmpty()) {
+		if ((targetConfig.getBucket() == null || targetConfig.getBucket().isEmpty()) && type.equalsIgnoreCase(TYPE_S3)) {
 			System.out.println("target bucket is null");
 			logger.error("target bucket is null");
 			System.exit(-1);
@@ -196,7 +254,7 @@ public class ObjectMover {
 			createBucket(true);
 		}
 		
-		if (isNAS) {
+		if (type.equalsIgnoreCase(TYPE_FILE)) {
 			pathNAS = sourceConfig.getMountPoint() + sourceConfig.getPrefix();
 			
 			File dir = new File(pathNAS);
@@ -213,56 +271,149 @@ public class ObjectMover {
 			}
 			
 		} else {
-			boolean isSecureSource;
-			if (sourceConfig.getEndPoint() != null && !sourceConfig.getEndPoint().isEmpty()) {
-				if (isSourceAWS) {
-					isSecureSource = true;
-				} else {
-					if (sourceConfig.getEndPointProtocol().compareToIgnoreCase("https") == 0) {
+			if (type.compareToIgnoreCase(TYPE_S3) == 0) {
+				boolean isSecureSource;
+				if (sourceConfig.getEndPoint() != null && !sourceConfig.getEndPoint().isEmpty()) {
+					if (isSourceAWS) {
 						isSecureSource = true;
 					} else {
-						isSecureSource = false;
+						if (sourceConfig.getEndPointProtocol().compareToIgnoreCase("https") == 0) {
+							isSecureSource = true;
+						} else {
+							isSecureSource = false;
+						}
+					}
+					try {
+						sourceS3 = createClient(isSourceAWS, isSecureSource, sourceConfig.getEndPoint(), sourceConfig.getAccessKey(), sourceConfig.getSecretKey());
+					} catch (SdkClientException e) {
+						System.out.println("source - Unable to find region");
+						System.exit(-1);
+					} catch (IllegalArgumentException e) {
+						System.out.println("source endpoint is invalid.");
+						System.exit(-1);
+					}
+				} else {
+					System.out.println("source : enter a value for endpoint or region.");
+					logger.error("source : enter a value for endpoint or region.");
+					System.exit(-1);
+				}
+				
+				if (sourceConfig.getBucket() == null || sourceConfig.getBucket().isEmpty()) {
+					System.out.println("source : bucket is null");
+					logger.error("source : bucket is null");
+					DBManager.insertErrorJob(jobId, "source : bucket is null");
+					System.exit(-1);
+				}
+				
+				if (!existBucket(true, true, sourceS3, sourceConfig.getBucket())) {
+					System.out.println("source : bucket(" + sourceConfig.getBucket() + ") does not exist.");
+					logger.error("source : bucket({}) does not exist.", sourceConfig.getBucket());
+					DBManager.insertErrorJob(jobId, "source : bucket(" + sourceConfig.getBucket() + ") does not exist.");
+					System.exit(-1);
+				}
+				
+				if (sourceConfig.getPrefix() != null && !sourceConfig.getPrefix().isEmpty()) {
+					ListObjectsRequest request = new ListObjectsRequest().withBucketName(sourceConfig.getBucket()).withPrefix(sourceConfig.getPrefix());
+					
+					ObjectListing result = sourceS3.listObjects(request);
+					if (result.getObjectSummaries().isEmpty()) {
+						System.out.println("source : bucket(" + sourceConfig.getBucket() + "), prefix(" + sourceConfig.getPrefix() + ") doesn't have an object.");
+						logger.error("source : bucket({}), prefix({}) doesn't have an object.", sourceConfig.getBucket(), sourceConfig.getPrefix());
+						DBManager.insertErrorJob(jobId, "source : bucket(" + sourceConfig.getBucket() + "), prefix(" + sourceConfig.getPrefix() + ") doesn't have an object.");
+						System.exit(-1);
 					}
 				}
+			} else if (type.compareToIgnoreCase(TYPE_OS) == 0) {
+				String domainId = sourceConfig.getDomainId();
+				if (domainId != null && !domainId.isEmpty()) {
+					domainIdentifier = Identifier.byId(domainId);
+				} else {
+					String domainName = sourceConfig.getDomainName();
+					if (domainName != null && !domainName.isEmpty()) {
+						domainIdentifier = Identifier.byName(domainName);
+					} else {
+						logger.error("Either domainId or donmainName must be entered.");
+						System.out.println("Either domainId or donmainName must be entered.");
+						System.exit(-1);
+					}
+				}
+
+				String projectId = sourceConfig.getProjectId();
+				if (projectId != null && !projectId.isEmpty()) {
+					projectIdentifier = Identifier.byId(projectId);
+				} else {
+					String projectName = sourceConfig.getProjectName();
+					if (projectName != null && !projectName.isEmpty()) {
+						projectIdentifier = Identifier.byName(projectName);
+					} else {
+						logger.error("Either projectId or projectName must be entered.");
+						System.out.println("Either projectId or projectName must be entered.");
+						System.exit(-1);
+					}
+				}
+
 				try {
-					sourceS3 = createClient(isSourceAWS, isSecureSource, sourceConfig.getEndPoint(), sourceConfig.getAccessKey(), sourceConfig.getSecretKey());
-				} catch (SdkClientException e) {
-					System.out.println("source - Unable to find region");
+					clientV3 = OSFactory.builderV3()
+						.endpoint(sourceConfig.getAuthEndpoint())
+						.credentials(sourceConfig.getUserName(), sourceConfig.getApiKey(), domainIdentifier)
+						.scopeToProject(projectIdentifier)
+						.authenticate();
+
+					List<? extends SwiftContainer> containers = clientV3.objectStorage().containers().list();
+					logger.info("container size : {}", containers.size());
+	
+					List<String> listContainer = new ArrayList<String>();
+					if (sourceConfig.getContainer() != null && !sourceConfig.getContainer().isEmpty()) {
+						String[] conContainers = sourceConfig.getContainer().split(",", 0);
+						for (int i = 0; i < conContainers.length; i++) {
+							listContainer.add(conContainers[i]);
+						}
+					}
+
+					for (SwiftContainer container : containers) {
+						if (container.getName().contains(SEGMENTS)) {
+							continue;
+						}
+						
+						if (listContainer.size() > 0) {
+							boolean isCheck = false;
+							for (String containerName : listContainer) {
+								if (container.getName().equals(containerName)) {
+									isCheck = true;
+									break;
+								}
+							}
+							if (!isCheck) {
+								continue;
+							}
+						} 
+						logger.info("container name : {}, object count : {}, object total size : {}", container.getName(), container.getObjectCount(), container.getTotalSize());
+						if (!isValidBucketName(container.getName())) {
+							String containerName = getS3BucketName(container.getName());
+							if (!isValidBucketName(containerName)) {
+								logger.error("Error : Container({}) name cannot be changed to S3 bucket name({}).", container.getName(), containerName);
+								System.out.println("Error : Container(" + container.getName() + ") name cannot be changed to S3 bucket name(" + containerName + ").");
+								System.exit(-1);
+							} 
+						}
+					}
+				} catch (AuthenticationException e) {
+					if (e.getStatus() == 401) {
+						logger.error("user name or api key is invalid.");
+						System.out.println("user-name or api-key is invalid.");
+					}
+					logger.error("Error : {} , {}", e.getStatus(), e.getMessage());
+					System.out.println("Error : " + e.getStatus() + " , " + e.getMessage());
 					System.exit(-1);
-				} catch (IllegalArgumentException e) {
-					System.out.println("source endpoint is invalid.");
+				} catch (ResponseException e) {
+					logger.error("Error :r {}, {}", e.getStatus(), e.getMessage());
+					System.out.println("Error :r " + e.getStatus() + " , " + e.getMessage());
 					System.exit(-1);
 				}
 			} else {
-				System.out.println("source : enter a value for endpoint or region.");
-				logger.error("source : enter a value for endpoint or region.");
+				System.out.println("undefined type : " + type);
+				logger.error("undefined type : {}", type);
 				System.exit(-1);
-			}
-			
-			if (sourceConfig.getBucket() == null || sourceConfig.getBucket().isEmpty()) {
-				System.out.println("source : bucket is null");
-				logger.error("source : bucket is null");
-				DBManager.insertErrorJob(jobId, "source : bucket is null");
-				System.exit(-1);
-			}
-			
-			if (!existBucket(true, true, sourceS3, sourceConfig.getBucket())) {
-				System.out.println("source : bucket(" + sourceConfig.getBucket() + ") does not exist.");
-				logger.error("source : bucket({}) does not exist.", sourceConfig.getBucket());
-				DBManager.insertErrorJob(jobId, "source : bucket(" + sourceConfig.getBucket() + ") does not exist.");
-				System.exit(-1);
-			}
-			
-			if (sourceConfig.getPrefix() != null && !sourceConfig.getPrefix().isEmpty()) {
-				ListObjectsRequest request = new ListObjectsRequest().withBucketName(sourceConfig.getBucket()).withPrefix(sourceConfig.getPrefix());
-				
-				ObjectListing result = sourceS3.listObjects(request);
-				if (result.getObjectSummaries().isEmpty()) {
-					System.out.println("source : bucket(" + sourceConfig.getBucket() + "), prefix(" + sourceConfig.getPrefix() + ") doesn't have an object.");
-					logger.error("source : bucket({}), prefix({}) doesn't have an object.", sourceConfig.getBucket(), sourceConfig.getPrefix());
-					DBManager.insertErrorJob(jobId, "source : bucket(" + sourceConfig.getBucket() + "), prefix(" + sourceConfig.getPrefix() + ") doesn't have an object.");
-					System.exit(-1);
-				}
 			}
 		}
 	}
@@ -287,7 +438,7 @@ public class ObjectMover {
 			}
 		}
 		
-		if (targetConfig.getBucket() == null || targetConfig.getBucket().isEmpty()) {
+		if ((targetConfig.getBucket() == null || targetConfig.getBucket().isEmpty()) && type.equalsIgnoreCase(TYPE_S3)) {
 			System.out.println("target bucket is null");
 			logger.error("target bucket is null");
 			DBManager.insertErrorJob(jobId, "target bucket is null");
@@ -308,7 +459,7 @@ public class ObjectMover {
 			System.exit(-1);
 		}
 		
-		if (!existBucket(false, false, targetS3, targetConfig.getBucket())) {
+		if (type.equalsIgnoreCase(TYPE_S3) && !existBucket(false, false, targetS3, targetConfig.getBucket())) {
 			createBucket(false);
 		}
 
@@ -317,7 +468,7 @@ public class ObjectMover {
 			prePath += "/";
 		}
 		
-		if (isNAS) {
+		if (type.equalsIgnoreCase(TYPE_FILE)) {
 			pathNAS = sourceConfig.getMountPoint() + sourceConfig.getPrefix();
 			
 			File dir = new File(pathNAS);
@@ -339,76 +490,177 @@ public class ObjectMover {
 				makeObjectListNas(pathNAS);
 			}
 		} else {
-			boolean isSecureSource;
-			if (sourceConfig.getEndPoint() != null || !sourceConfig.getEndPoint().isEmpty()) {
-				if (isSourceAWS) {
-					isSecureSource = true;
-				} else {
-					if (sourceConfig.getEndPointProtocol().compareToIgnoreCase("https") == 0) {
+			if (type.compareToIgnoreCase(TYPE_S3) == 0) {
+				boolean isSecureSource;
+				if (sourceConfig.getEndPoint() != null || !sourceConfig.getEndPoint().isEmpty()) {
+					if (isSourceAWS) {
 						isSecureSource = true;
 					} else {
-						isSecureSource = false;
+						if (sourceConfig.getEndPointProtocol().compareToIgnoreCase("https") == 0) {
+							isSecureSource = true;
+						} else {
+							isSecureSource = false;
+						}
 					}
+					
+					try {
+						sourceS3 = createClient(isSourceAWS, isSecureSource, sourceConfig.getEndPoint(), sourceConfig.getAccessKey(), sourceConfig.getSecretKey());
+					} catch (SdkClientException e) {
+						System.out.println("Unable to find region");
+						logger.error("Unable to find region");
+						DBManager.insertErrorJob(jobId, "Unable to find region");
+						System.exit(-1);
+					} catch (IllegalArgumentException e) {
+						System.out.println("source endpoint is invalid.");
+						logger.error("source endpoint is invalid.");
+						DBManager.insertErrorJob(jobId, "source endpoint is invalid.");
+						System.exit(-1);
+					}
+				} else {
+					logger.error("source : enter a value for endpoint or region.");
+					DBManager.insertErrorJob(jobId, "source : enter a value for endpoint or region.");
+					System.out.println("source : enter a value for endpoint or region.");
+					System.exit(-1);
 				}
 				
-				try {
-					sourceS3 = createClient(isSourceAWS, isSecureSource, sourceConfig.getEndPoint(), sourceConfig.getAccessKey(), sourceConfig.getSecretKey());
-				} catch (SdkClientException e) {
-					System.out.println("Unable to find region");
-					logger.error("Unable to find region");
-					DBManager.insertErrorJob(jobId, "Unable to find region");
-					System.exit(-1);
-				} catch (IllegalArgumentException e) {
-					System.out.println("source endpoint is invalid.");
-					logger.error("source endpoint is invalid.");
-					DBManager.insertErrorJob(jobId, "source endpoint is invalid.");
+				if (sourceConfig.getBucket() == null || sourceConfig.getBucket().isEmpty()) {
+					logger.error("source : bucket is null");
+					DBManager.insertErrorJob(jobId, "source : bucket is null");
 					System.exit(-1);
 				}
+				
+				if (!existBucket(false, false, sourceS3, sourceConfig.getBucket())) {
+					logger.error("source : bucket({}) does not exist.", sourceConfig.getBucket());
+					DBManager.insertErrorJob(jobId, "source : bucket(" + sourceConfig.getBucket() + ") does not exist.");
+					System.exit(-1);
+				}
+	
+				try {
+					sourceS3VersionConfig = sourceS3.getBucketVersioningConfiguration(sourceConfig.getBucket());
+				} catch (AmazonServiceException ase) {
+					logger.warn("{} {}", ase.getErrorCode(), ase.getErrorMessage());
+				} catch (SdkClientException ace) {
+					logger.warn("{}", ace.getMessage());
+				}
+				
+				if (sourceS3VersionConfig.getStatus().equals(BucketVersioningConfiguration.OFF)) {
+					isVersioning = false;
+				} else {
+					isVersioning = true;
+					targetS3.setBucketVersioningConfiguration(new SetBucketVersioningConfigurationRequest(targetConfig.getBucket(), 
+						new BucketVersioningConfiguration(BucketVersioningConfiguration.ENABLED)));
+					logger.info("set target-{} versioning is Enabled", targetConfig.getBucket());
+				}
+				
+				if (isRerun) {
+					makeObjectVersionListRerun();
+				} else {
+					makeObjectVersionList();
+				}
 			} else {
-				logger.error("source : enter a value for endpoint or region.");
-				DBManager.insertErrorJob(jobId, "source : enter a value for endpoint or region.");
-				System.out.println("source : enter a value for endpoint or region.");
-				System.exit(-1);
-			}
-			
-			if (sourceConfig.getBucket() == null || sourceConfig.getBucket().isEmpty()) {
-				logger.error("source : bucket is null");
-				DBManager.insertErrorJob(jobId, "source : bucket is null");
-				System.exit(-1);
-			}
-			
-			if (!existBucket(false, false, sourceS3, sourceConfig.getBucket())) {
-				logger.error("source : bucket({}) does not exist.", sourceConfig.getBucket());
-				DBManager.insertErrorJob(jobId, "source : bucket(" + sourceConfig.getBucket() + ") does not exist.");
-				System.exit(-1);
-			}
+				// openstack swift
+				String domainId = sourceConfig.getDomainId();
+				if (domainId != null && !domainId.isEmpty()) {
+					domainIdentifier = Identifier.byId(domainId);
+				} else {
+					String domainName = sourceConfig.getDomainName();
+					if (domainName != null && !domainName.isEmpty()) {
+						domainIdentifier = Identifier.byName(domainName);
+					} else {
+						logger.error("Either domainId or donmainName must be entered.");
+						System.out.println("Either domainId or donmainName must be entered.");
+						System.exit(-1);
+					}
+				}
 
-			try {
-				sourceS3VersionConfig = sourceS3.getBucketVersioningConfiguration(sourceConfig.getBucket());
-			} catch (AmazonServiceException ase) {
-				logger.warn("{} {}", ase.getErrorCode(), ase.getErrorMessage());
-			} catch (SdkClientException ace) {
-				logger.warn("{}", ace.getMessage());
-			}
-			
-			if (sourceS3VersionConfig.getStatus().equals(BucketVersioningConfiguration.OFF)) {
-				isVersioning = false;
-			} else {
-				isVersioning = true;
-				targetS3.setBucketVersioningConfiguration(new SetBucketVersioningConfigurationRequest(targetConfig.getBucket(), 
-					new BucketVersioningConfiguration(BucketVersioningConfiguration.ENABLED)));
-				logger.info("set target-{} versioning is Enabled", targetConfig.getBucket());
-			}
-			
-			if (isRerun) {
-				makeObjectVersionListRerun();
-			} else {
-				makeObjectVersionList();
+				String projectId = sourceConfig.getProjectId();
+				if (projectId != null && !projectId.isEmpty()) {
+					projectIdentifier = Identifier.byId(projectId);
+				} else {
+					String projectName = sourceConfig.getProjectName();
+					if (projectName != null && !projectName.isEmpty()) {
+						projectIdentifier = Identifier.byName(projectName);
+					} else {
+						logger.error("Either projectId or projectName must be entered.");
+						System.out.println("Either projectId or projectName must be entered.");
+						System.exit(-1);
+					}
+				}
+
+				List<? extends SwiftContainer> containers = null;
+				try {				
+					containers = clientV3.objectStorage().containers().list();
+
+					List<String> listContainer = new ArrayList<String>();
+					if (sourceConfig.getContainer() != null && !sourceConfig.getContainer().isEmpty()) {
+						String[] conContainers = sourceConfig.getContainer().split(",", 0);
+						for (int i = 0; i < conContainers.length; i++) {
+							listContainer.add(conContainers[i]);
+						}
+					}
+
+					for (SwiftContainer container : containers) {
+						logger.info("container: {}, {}", container.getName(), container.getObjectCount());
+						if (container.getName().contains(SEGMENTS)) {
+							continue;
+						}
+						
+						if (listContainer.size() > 0) {
+							boolean isCheck = false;
+							for (String containerName : listContainer) {
+								if (container.getName().equals(containerName)) {
+									isCheck = true;
+									break;
+								}
+							}
+							if (!isCheck) {
+								continue;
+							}
+						} 
+						if (!isValidBucketName(container.getName())) {
+							String containerName = getS3BucketName(container.getName());
+							logger.warn("change S3 Bucket Name : swift : {} -> s3 : {}", container.getName(), containerName);
+							if (!isValidBucketName(containerName)) {
+								logger.error("Error : Container name cannot be changed to S3 bucket name.");
+								System.out.println("Error : Container name cannot be changed to S3 bucket name.");
+								System.exit(-1);
+							} else {
+								createBucket(containerName);
+							}
+						} else {
+							createBucket(container.getName());
+						}
+					}
+				} catch (ResponseException e) {
+					logger.error("Error : {}", e.getMessage());
+					System.out.println("Error : " + e.getMessage());
+					System.exit(-1);
+				}
+
+				if (isRerun) {
+					makeObjectListSwiftRerun(containers);
+				} else {
+					makeObjectListSwift(containers);
+				}
 			}
 		}
 		
 		if (isRerun) {
 			DBManager.deleteCheckObjects(jobId);
+		}
+	}
+
+	private void uploadSwiftObject(OSClientV3 clientV3, String container, String dirPath) {
+		File dir = new File(dirPath);
+		File[] files = dir.listFiles();
+		
+		for (int i = 0; i < files.length; i++) {
+			if (files[i].isDirectory()) {
+				uploadSwiftObject(clientV3, container, files[i].getPath());
+			}
+			else {
+				clientV3.objectStorage().objects().put(container, files[i].getName(), Payloads.create(files[i]));
+			}
 		}
 	}
 
@@ -468,7 +720,12 @@ public class ObjectMover {
 				list = DBManager.getToMoveObjectsInfo(jobId, sequence, limit);
 				if (list.isEmpty() && sequence >= maxSequence) {
 					if (jobList != null && !jobList.isEmpty()) {
-						Mover mover = new Mover(jobList);
+						Mover mover = null;
+						if (type.equalsIgnoreCase(TYPE_OS)) {
+							mover = new Mover(jobList);
+						} else {
+							mover = new Mover(jobList);
+						}
 						executor.execute(mover);
 					}
 					isDoneDistribute = true;
@@ -967,9 +1224,72 @@ public class ObjectMover {
         }
 	}
 
-	private void retryInsertMoveObjectVersioning(boolean isFile, String mTime, long size, String path, String versionId, boolean isDelete, boolean isLatest) {
+	private void createBucket(String bucket) {
+		try {
+			targetS3.createBucket(bucket);
+		} catch (AmazonServiceException ase) {
+			if (ase.getErrorCode().compareToIgnoreCase("BucketAlreadyOwnedByYou") == 0) {
+				return;
+			} else if (ase.getErrorCode().compareToIgnoreCase("BucketAlreadyExists") == 0) {
+				return;
+			}
+			
+			logger.error("error code : {}", ase.getErrorCode());
+			logger.error(ase.getMessage());
+			DBManager.insertErrorJob(jobId, ase.getMessage());
+			System.exit(-1);
+        }
+	}
+
+	private boolean isValidBucketName(String bucketName) {
+		if (bucketName == null ||
+			bucketName.length() < 3 || bucketName.length() > 63 ||
+			bucketName.startsWith(".") || bucketName.startsWith("-") ||
+			bucketName.endsWith(".") || bucketName.endsWith("-") || bucketName.endsWith("-s3alias") ||
+			!VALID_BUCKET_CHAR.matchesAllOf(bucketName) || 
+			bucketName.startsWith("xn--") || bucketName.contains("..") ||
+			bucketName.contains(".-") || bucketName.contains("-.")) {
+			return false;
+		}
+
+		return true;
+	}
+
+	private String getS3BucketName(String bucketName) {
+		String bucket = bucketName.toLowerCase();
+		if (bucket.length() < 3) {
+			bucket = "ifs-" + bucket;
+		} else if (bucket.length() > 63) {
+			bucket = bucket.substring(0, 62);
+		}
+
+		if (bucket.startsWith(".") || bucket.startsWith("-")) {
+			bucket = bucket.substring(1, bucket.length() - 1);
+		}
+
+		if (bucket.startsWith("xn--")) {
+			bucket = bucket.substring(4, bucket.length() - 1);
+		}
+
+		if (bucket.endsWith(".") || bucket.endsWith("-")) {
+			bucket = bucket.substring(0, bucket.length() - 2);
+		}
+
+		if (bucket.endsWith("-s3alias")) {
+			bucket = bucket.substring(0, bucket.length() - 9);
+		}
+
+		bucket = bucket.replace("_", "-");
+		bucket = bucket.replace("..", "");
+		bucket = bucket.replace(".-", "");
+		bucket = bucket.replace("-.", "");
+		
+		return bucket;
+	}
+
+	private void retryInsertMoveObjectVersioning(boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest) {
 		for (int i = 0; i < RETRY_COUNT; i++) {
-			if (DBManager.insertMoveObjectVersioning(jobId, isFile, mTime, size, path, versionId, isDelete, isLatest)) {
+			if (DBManager.insertMoveObjectVersioning(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
 				return;
 			} else {
 				try {
@@ -983,9 +1303,9 @@ public class ObjectMover {
 		logger.error("failed insertMoveObjectVersioning. path={}", path);
 	}
 
-	private void retryInsertRerunMoveObjectVersion(boolean isFile, String mTime, long size, String path, String versionId, boolean isDelete, boolean isLatest) {
+	private void retryInsertRerunMoveObjectVersion(boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest) {
 		for (int i = 0; i < RETRY_COUNT; i++) {
-			if (DBManager.insertRerunMoveObjectVersion(jobId, isFile, mTime, size, path, versionId, isDelete, isLatest)) {
+			if (DBManager.insertRerunMoveObjectVersion(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
 				return;
 			} else {
 				try {
@@ -1052,6 +1372,9 @@ public class ObjectMover {
 							versionSummary.getSize(), 
 							versionSummary.getKey(), 
 							versionSummary.getVersionId(), 
+							versionSummary.getETag(),
+							"",
+							"",
 							versionSummary.isDeleteMarker(), 
 							versionSummary.isLatest());
 						retryUpdateJobInfo(versionSummary.getSize());
@@ -1122,6 +1445,9 @@ public class ObjectMover {
 								versionSummary.getSize(), 
 								versionSummary.getKey(), 
 								versionSummary.getVersionId(), 
+								versionSummary.getETag(),
+								"",
+								"",
 								versionSummary.isDeleteMarker(), 
 								versionSummary.isLatest());
 							retryUpdateJobRerunInfo(versionSummary.getSize());
@@ -1186,6 +1512,294 @@ public class ObjectMover {
         }
 	}
 
+	private void makeObjectListSwift(List<? extends SwiftContainer> containers) {
+		long count = 0;
+		try  {
+			OSClientV3 V3 = OSFactory.builderV3()
+				.endpoint(sourceConfig.getAuthEndpoint())
+				.credentials(sourceConfig.getUserName(), sourceConfig.getApiKey(), domainIdentifier)
+				.scopeToProject(projectIdentifier)
+				.authenticate();
+
+			List<? extends SwiftObject> objs = null;
+			List<String> listContainer = new ArrayList<String>();
+			if (sourceConfig.getContainer() != null && !sourceConfig.getContainer().isEmpty()) {
+				String[] configContainers = sourceConfig.getContainer().split(",", 0);
+				for (int i = 0; i < configContainers.length; i++) {
+					listContainer.add(configContainers[i]);
+				}
+			}
+
+			for (SwiftContainer container : containers) {
+				if (container.getName().contains(SEGMENTS)) {
+					continue;
+				}
+				
+				if (listContainer.size() > 0) {
+					boolean isCheck = false;
+					for (String containerName : listContainer) {
+						if (container.getName().equals(containerName)) {
+							isCheck = true;
+							break;
+						}
+					}
+					if (!isCheck) {
+						continue;
+					}
+				}
+
+				Map<String, String> containerMap = container.getMetadata();
+				List<TagSet> tags = new ArrayList<TagSet>();
+				for (String key : containerMap.keySet()) {
+					// if (key.equalsIgnoreCase(MULTIPART_INFO)
+					// 	|| key.equalsIgnoreCase(X_TIMESTAMP)
+					// 	|| key.equalsIgnoreCase(X_OPENSTACK_REQUEST_ID)
+					// 	|| key.equalsIgnoreCase(X_TRANS_ID)
+					// 	|| key.equalsIgnoreCase(MTIME)) {
+					// 	continue;
+					// }
+					TagSet set = new TagSet();
+					set.setTag(key, containerMap.get(key));
+					tags.add(set);
+				}
+				if (tags.size() > 0) {
+					String bucketName = container.getName();
+					if (!isValidBucketName(bucketName)) {
+						bucketName = getS3BucketName(bucketName);
+						if (!isValidBucketName(bucketName)) {
+							logger.error("Error : Container name cannot be changed to S3 bucket name.");
+							System.out.println("Error : Container name cannot be changed to S3 bucket name.");
+							System.exit(-1);
+						}
+					}
+					BucketTaggingConfiguration configuration = new BucketTaggingConfiguration();
+					configuration.setTagSets(tags);
+					targetS3.setBucketTaggingConfiguration(bucketName, configuration);
+				}
+
+				ObjectListOptions listOptions = ObjectListOptions.create().limit(10000);
+				if (sourceConfig.getPrefix() != null && !sourceConfig.getPrefix().isEmpty()) {
+					listOptions.startsWith(sourceConfig.getPrefix());
+				}
+				
+				do {
+					objs = clientV3.objectStorage().objects().list(container.getName(), listOptions);
+					if (!objs.isEmpty()) {
+						listOptions.marker(objs.get(objs.size() - 1).getName());
+					}
+					
+					for (SwiftObject obj : objs) {
+						Map<String, String> meta = obj.getMetadata();
+						long size = obj.getSizeInBytes();
+	
+						JSONObject json = new JSONObject();
+						for (String key : meta.keySet()) {
+							if (key.equalsIgnoreCase(MULTIPART_INFO)
+								|| key.equalsIgnoreCase(X_TIMESTAMP)
+								|| key.equalsIgnoreCase(X_OPENSTACK_REQUEST_ID)
+								|| key.equalsIgnoreCase(X_TRANS_ID)
+								|| key.equalsIgnoreCase(MTIME)
+								|| key.equalsIgnoreCase(X_OBJECT_META_FILE)) {
+								continue;
+							}
+							json.put(key, meta.get(key));
+						}
+						
+						
+						if (meta.get(MULTIPART_INFO) != null) {
+							String[] path = meta.get(MULTIPART_INFO).split("/", 2);
+							int i = 0;
+							SwiftObject object = null;
+							do {
+								String partPath = String.format("%08d", i++);
+								partPath = path[1] + partPath;
+								
+								object = V3.objectStorage().objects().get(path[0], partPath);
+								if (object != null) {
+									size += object.getSizeInBytes();
+								}
+							} while (object != null);
+						}
+						count++;
+						retryInsertMoveObjectVersioning(!obj.isDirectory(),  
+							obj.getLastModified().toString(),
+							size,
+							container.getName() + "/" + obj.getName(), 
+							"",
+							obj.getETag(),
+							meta.get(MULTIPART_INFO),
+							json.toString(),
+							false,
+							true);
+						retryUpdateJobInfo(size);
+						// OSClient v3 = OSFactory.builderV3()
+						// 	.endpoint(sourceConfig.getAuthEndpoint())
+						// 	.credentials(sourceConfig.getUserName(), sourceConfig.getApiKey(), domainIdentifier)
+						// 	.scopeToProject(projectIdentifier)
+						// 	.authenticate();
+						// Map<String, String> map = new HashMap<String, String>();
+						// map.put("uuid", UUID.randomUUID().toString());
+						// v3.objectStorage().objects().updateMetadata(ObjectLocation.create(container.getName(), obj.getName()), map);
+					}
+				} while (objs.size() >= 10000);
+			}
+
+			if (count == 0) {
+				logger.error("Doesn't havn an object.");
+				DBManager.insertErrorJob(jobId, "Doesn't havn an object.");
+				System.exit(-1);
+			}
+		} catch (ResponseException e) {
+			logger.error("Error code : {}", e.getStatus());
+			logger.error("Error message : {}", e.getMessage());
+			DBManager.insertErrorJob(jobId, e.getStatus() + "," + e.getMessage());
+			System.exit(-1);
+		}
+	}
+
+	private void makeObjectListSwiftRerun(List<? extends SwiftContainer> containers) {
+		long state = 0;
+		try  {
+			List<? extends SwiftObject> objs = null;	
+			OSClientV3 V3 = OSFactory.builderV3()
+				.endpoint(sourceConfig.getAuthEndpoint())
+				.credentials(sourceConfig.getUserName(), sourceConfig.getApiKey(), domainIdentifier)
+				.scopeToProject(projectIdentifier)
+				.authenticate();
+
+			List<String> listContainer = new ArrayList<String>();
+			if (sourceConfig.getContainer() != null && !sourceConfig.getContainer().isEmpty()) {
+				String[] configContainers = sourceConfig.getContainer().split(",", 0);
+				for (int i = 0; i < configContainers.length; i++) {
+					listContainer.add(configContainers[i]);
+				}
+			}
+
+			for (SwiftContainer container : containers) {
+				if (container.getName().contains(SEGMENTS)) {
+					continue;
+				}
+				
+				if (listContainer.size() > 0) {
+					boolean isCheck = false;
+					for (String containerName : listContainer) {
+						if (container.getName().equals(containerName)) {
+							isCheck = true;
+							break;
+						}
+					}
+					if (!isCheck) {
+						continue;
+					}
+				}
+
+				Map<String, String> containerMap = container.getMetadata();
+				List<TagSet> tags = new ArrayList<TagSet>();
+				for (String key : containerMap.keySet()) {
+					// if (key.equalsIgnoreCase(MULTIPART_INFO)
+					// 	|| key.equalsIgnoreCase(X_TIMESTAMP)
+					// 	|| key.equalsIgnoreCase(X_OPENSTACK_REQUEST_ID)
+					// 	|| key.equalsIgnoreCase(X_TRANS_ID)
+					// 	|| key.equalsIgnoreCase(MTIME)) {
+					// 	continue;
+					// }
+					TagSet set = new TagSet();
+					set.setTag(key, containerMap.get(key));
+					tags.add(set);
+				}
+				if (tags.size() > 0) {
+					String bucketName = container.getName();
+					if (!isValidBucketName(bucketName)) {
+						bucketName = getS3BucketName(bucketName);
+						if (!isValidBucketName(bucketName)) {
+							logger.error("Error : Container name cannot be changed to S3 bucket name.");
+							System.out.println("Error : Container name cannot be changed to S3 bucket name.");
+							System.exit(-1);
+						}
+					}
+					BucketTaggingConfiguration configuration = new BucketTaggingConfiguration();
+					configuration.setTagSets(tags);
+					targetS3.setBucketTaggingConfiguration(bucketName, configuration);
+				}
+
+				ObjectListOptions listOptions = ObjectListOptions.create().limit(10000);
+				if (sourceConfig.getPrefix() != null && !sourceConfig.getPrefix().isEmpty()) {
+					listOptions.startsWith(sourceConfig.getPrefix());
+				}
+
+				do {
+					objs = clientV3.objectStorage().objects().list(sourceConfig.getContainer(), listOptions);
+					if (!objs.isEmpty()) {
+						listOptions.marker(objs.get(objs.size() - 1).getName());
+					}
+					
+					for (SwiftObject obj : objs) {
+						Map<String, String> meta = obj.getMetadata();
+						long size = obj.getSizeInBytes();
+	
+						JSONObject json = new JSONObject();
+						for (String key : meta.keySet()) {
+							if (key.equalsIgnoreCase(MULTIPART_INFO)
+								|| key.equalsIgnoreCase(X_TIMESTAMP)
+								|| key.equalsIgnoreCase(X_OPENSTACK_REQUEST_ID)
+								|| key.equalsIgnoreCase(X_TRANS_ID)
+								|| key.equalsIgnoreCase(MTIME)
+								|| key.equalsIgnoreCase(X_OBJECT_META_FILE)) {
+								continue;
+							}
+							json.put(key, meta.get(key));
+						}
+						
+						if (meta.get(MULTIPART_INFO) != null) {
+							String[] path = meta.get(MULTIPART_INFO).split("/", 2);
+							int i = 0;
+							SwiftObject object = null;
+							do {
+								String partPath = String.format("%08d", i++);
+								partPath = path[1] + partPath;
+								
+								object = V3.objectStorage().objects().get(path[0], partPath);
+								if (object != null) {
+									size += object.getSizeInBytes();
+								}
+							} while (object != null);
+						}
+
+						Map<String, String> info = DBManager.infoExistObject(jobId, obj.getName());
+						if (info.isEmpty()) {
+							retryInsertMoveObjectVersioning(!obj.isDirectory(), 
+								obj.getLastModified().toString(),
+								obj.getSizeInBytes(),
+								obj.getName(), 
+								"",
+								obj.getETag(),
+								meta.get(MULTIPART_INFO),
+								json.toString(),
+								false,
+								true);
+							retryUpdateJobInfo(obj.getSizeInBytes());
+						} else {
+							state = Integer.parseInt(info.get("object_state"));
+							String mTime = info.get("mtime");
+							if (state == 3 && mTime.compareTo(obj.getLastModified().toString()) == 0) {	
+								retryUpdateRerunSkipObjectVersion(obj.getName(), "");
+								retryUpdateJobRerunSkipInfo(obj.getSizeInBytes());
+							} else {
+								retryUpdateToMoveObjectVersion(obj.getLastModified().toString(), obj.getSizeInBytes(), obj.getName(), "");
+								retryUpdateJobRerunInfo(obj.getSizeInBytes());
+							}
+						}
+					}
+				} while (objs.size() >= 10000);
+			}
+		} catch (ResponseException e) {
+			logger.error("Error code : {}", e.getStatus());
+			logger.error("Error message : {}", e.getMessage());
+			DBManager.insertErrorJob(jobId, e.getStatus() + "," + e.getMessage());
+			System.exit(-1);
+		}
+	}
+
 	private static synchronized void addMovedObjectList(String path, String versionId) {
 		Map<String, String> map = new HashMap<String, String>();
 		map.put("path", path);
@@ -1229,23 +1843,32 @@ public class ObjectMover {
 		private boolean latestIsFile;
 		private String versionId;
 		private String latestVersionId;
+		private String etag;
+		private String latestETag;
+		private String multipartInfo;
+		private String latestMultipartInfo;
+		private String tag;
+		private String latestTag;
 		private boolean isDelete;
 		private boolean latestIsDelete;
 		private boolean isLatest;
 
 		private boolean isFault;
 		private boolean isDoneLatest;
-				
+
+		private OSClientV3 clientV3;
+		
 		public Mover(List<Map<String, String>> list) {
 			this.list = list;
 			getMoveSize();
 		}
 
-		Mover(String path, long size, boolean isFile, String versionId, boolean isDelete) {
+		Mover(String path, long size, boolean isFile, String versionId, String etag, boolean isDelete) {
 			this.path = path;
 			this.size = size;
 			this.isFile = isFile;
 			this.versionId = versionId;
+			this.etag = etag;
 			this.isDelete = isDelete;
 		}
 
@@ -1341,88 +1964,146 @@ public class ObjectMover {
 			return true;
 		}
 		
-		private boolean moveObject(String path, boolean isDelete, boolean isFile, String versionId, long size) {
+		private boolean moveObject(String path, boolean isDelete, boolean isFile, String versionId, String etag, String multipartInfo, String tag, long size) {
 			String sourcePath = path;
 			String targetObject = path;
+			String tETag = null;
+			Map<String, String> tagMap = null;
+			List<Tag> tagSet = new ArrayList<Tag>();
+			
+			if (sourceConfig.getPrefix() != null && !sourceConfig.getPrefix().isEmpty()) {
+				path = path.substring(sourceConfig.getPrefix().length());
+				if (path.startsWith("/")) {
+					path = path.substring(1);
+				}
+			}
+			
+			if (type.equalsIgnoreCase(TYPE_OS)) {
+				targetObject = path.split("/", 2)[1];
+			}
 
-			try {
-				if (sourceConfig.getPrefix() != null && !sourceConfig.getPrefix().isEmpty()) {
-					path = path.substring(sourceConfig.getPrefix().length());
-					if (path.startsWith("/")) {
-						path = path.substring(1);
+			String prefix = targetConfig.getPrefix();
+			if (prefix != null && !prefix.isEmpty()) {
+				StringBuilder bld = new StringBuilder();
+				String[] tmpArr = prefix.split("/");
+				for (String str : tmpArr) {
+					if (!str.isEmpty()) {
+						bld.append(str);
+						bld.append("/");
 					}
 				}
-				
-				String prefix = targetConfig.getPrefix();
-				if (prefix != null && !prefix.isEmpty()) {
-					StringBuilder bld = new StringBuilder();
-					String[] tmpArr = prefix.split("/");
-					for (String str : tmpArr) {
-						if (!str.isEmpty()) {
-							bld.append(str);
-							bld.append("/");
-						}
-					}
-					String prefixFinal = bld.toString();
-					if (prefixFinal.length() >= 1) {
+				String prefixFinal = bld.toString();
+				if (prefixFinal.length() >= 1) {
+					if (type.equalsIgnoreCase(TYPE_OS)) {
+						targetObject = prefixFinal + targetObject;
+					} else {
 						targetObject = prefixFinal + path;
 					}
 				}
-				
-				if (isDelete) {
-					targetS3.deleteObject(targetConfig.getBucket(), targetObject);
-					logger.info("delete success : {}", sourcePath);
-				} else {
-					InputStream is = null;
-					ObjectMetadata meta = null;
-					GetObjectRequest getObjectRequest = null;
-					S3Object objectData = null;
+			}
 
-					if (isFile) {
-						if (moveSize != 0 && size > moveSize) {
-							InitiateMultipartUploadResult initMultipart = targetS3.initiateMultipartUpload(new InitiateMultipartUploadRequest(targetConfig.getBucket(), targetObject));
-							String uploadId = initMultipart.getUploadId();
-							List<PartETag> partList = new ArrayList<PartETag>();
-							int partNumber = 1;
-							for (long i = 0; i < size; i += moveSize, partNumber++) {
-								long start = i;
-								long end = i + moveSize - 1;
-								if (end >= size) {
-									end = size - 1;
+			if (tag != null && !tag.isEmpty()) {
+				try {
+					tagMap = new ObjectMapper().readValue(tag, Map.class);
+					for (String key : tagMap.keySet()) {
+						Tag s3tag = new Tag(new String(key.getBytes("UTF-8"), Charset.forName("UTF-8")), new String(tagMap.get(key).getBytes("UTF-8"), Charset.forName("UTF-8")));
+						tagSet.add(s3tag);
+					}
+				} catch (JsonParseException e) {
+					logger.error(path + "," + e.getMessage());
+					tagMap = null;
+				} catch (JsonMappingException e) {
+					logger.error(path + "," + e.getMessage());
+					tagMap = null;
+				} catch (IOException e) {
+					logger.error(path + "," + e.getMessage());
+					tagMap = null;
+				}
+			}
+
+			if (type.compareToIgnoreCase(TYPE_S3) == 0) {
+				try {
+					if (isDelete) {
+						targetS3.deleteObject(targetConfig.getBucket(), targetObject);
+						logger.info("delete success : {}", sourcePath);
+					} else {
+						InputStream is = null;
+						ObjectMetadata meta = null;
+						GetObjectRequest getObjectRequest = null;
+						S3Object objectData = null;
+	
+						if (isFile) {
+							if (moveSize != 0 && size > moveSize) {
+								InitiateMultipartUploadResult initMultipart = targetS3.initiateMultipartUpload(new InitiateMultipartUploadRequest(targetConfig.getBucket(), targetObject));
+								String uploadId = initMultipart.getUploadId();
+								List<PartETag> partList = new ArrayList<PartETag>();
+								int partNumber = 1;
+								for (long i = 0; i < size; i += moveSize, partNumber++) {
+									long start = i;
+									long end = i + moveSize - 1;
+									if (end >= size) {
+										end = size - 1;
+									}
+	
+									if (versionId == null) {
+										getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withRange(start, end);
+									} else {
+										getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withVersionId(versionId).withRange(start, end);
+									}
+									objectData = sourceS3.getObject(getObjectRequest);
+									is = objectData.getObjectContent();
+									
+									UploadPartResult partResult = targetS3.uploadPart(new UploadPartRequest().withBucketName(targetConfig.getBucket()).withKey(targetObject)
+											.withUploadId(uploadId).withInputStream(is).withPartNumber(partNumber).withPartSize(end - start + 1));
+									partList.add(new PartETag(partNumber, partResult.getETag()));
+									is.close();
 								}
 
-								if (versionId == null) {
-									getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withRange(start, end);
+								CompleteMultipartUploadResult result = targetS3.completeMultipartUpload(new CompleteMultipartUploadRequest(targetConfig.getBucket(), targetObject, uploadId, partList));
+								tETag = result.getETag();
+								if (etag.equals(tETag)) {
+									if (versionId != null && !versionId.isEmpty()) {
+										logger.info("move success : {}:{}", sourcePath, versionId);
+									} else {
+										logger.info("move success : {}", sourcePath);
+									}
 								} else {
-									getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withVersionId(versionId).withRange(start, end);
+									logger.warn("The etags are different. source : {}, target : {}", etag, tETag);
+									return false;
+								}
+							} else {
+								if (versionId == null) {
+									getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath);
+								} else {
+									getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withVersionId(versionId);
 								}
 								objectData = sourceS3.getObject(getObjectRequest);
 								is = objectData.getObjectContent();
-								
-								UploadPartResult partResult = targetS3.uploadPart(new UploadPartRequest().withBucketName(targetConfig.getBucket()).withKey(targetObject)
-										.withUploadId(uploadId).withInputStream(is).withPartNumber(partNumber).withPartSize(end - start + 1));
-								partList.add(new PartETag(partNumber, partResult.getETag()));
-								is.close();
-							}
-							targetS3.completeMultipartUpload(new CompleteMultipartUploadRequest(targetConfig.getBucket(), targetObject, uploadId, partList));
-							if (versionId != null && !versionId.isEmpty()) {
-								logger.info("move success : {}:{}", sourcePath, versionId);
-							} else {
-								logger.info("move success : {}", sourcePath);
+								meta = objectData.getObjectMetadata();
+	
+								PutObjectRequest putObjectRequest;
+								putObjectRequest = new PutObjectRequest(targetConfig.getBucket(), targetObject, is, meta);
+								putObjectRequest.getRequestClientOptions().setReadLimit(1024 * 1024 * 1024);
+								PutObjectResult result = targetS3.putObject(putObjectRequest);
+								tETag = result.getETag();
+								if (etag.equals(tETag)) {
+									if (versionId != null && !versionId.isEmpty()) {
+										logger.info("move success : {}:{}", sourcePath, versionId);
+									} else {
+										logger.info("move success : {}", sourcePath);
+									}
+								} else {
+									logger.warn("The etags are different. source : {}, target : {}", etag, tETag);
+									return false;
+								}
 							}
 						} else {
-							if (versionId == null) {
-								getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath);
-							} else {
-								getObjectRequest = new GetObjectRequest(sourceConfig.getBucket(), sourcePath).withVersionId(versionId);
-							}
-							objectData = sourceS3.getObject(getObjectRequest);
-							is = objectData.getObjectContent();
-							meta = objectData.getObjectMetadata();
-
+							meta = new ObjectMetadata();
+							meta.setContentLength(0);
+							is = new ByteArrayInputStream(new byte[0]);
+	
 							PutObjectRequest putObjectRequest;
 							putObjectRequest = new PutObjectRequest(targetConfig.getBucket(), targetObject, is, meta);
-							putObjectRequest.getRequestClientOptions().setReadLimit(1024 * 1024 * 1024);
 							targetS3.putObject(putObjectRequest);
 							if (versionId != null && !versionId.isEmpty()) {
 								logger.info("move success : {}:{}", sourcePath, versionId);
@@ -1430,41 +2111,184 @@ public class ObjectMover {
 								logger.info("move success : {}", sourcePath);
 							}
 						}
+					}
+				} catch (AmazonServiceException ase) {
+					if (ase.getErrorCode().compareToIgnoreCase(NO_SUCH_KEY) == 0) {
+						if (versionId == null) {
+							logger.warn("{} {}", sourcePath, ase.getErrorMessage());
+						} else {
+							logger.warn("{}:{} {}", sourcePath, versionId, ase.getErrorMessage());
+						}
+					} else if (ase.getErrorMessage().contains(NOT_FOUND)) {
+						logger.warn("{} {}", sourcePath, ase.getErrorMessage());
 					} else {
+						logger.warn("{} {}- {}", sourcePath, ase.getErrorCode(), ase.getErrorMessage());
+					}
+					return false;
+				} catch (AmazonClientException ace) {
+					logger.warn("{}", sourcePath, ace);
+					return false;
+				} catch (IOException e) {
+					logger.warn("{} {}", sourcePath, e.getMessage());
+					return false;
+				}
+			} else {
+				// openstack swift
+				try {
+					InputStream is = null;
+					ObjectMetadata meta = null;
+					
+					String[] sourcePaths = sourcePath.split("/", 2);
+					String sourceBucket = sourcePaths[0];
+					String sourceObject = sourcePaths[1];
+					String targetBucket = sourceBucket;
+					if (!isValidBucketName(targetBucket)) {
+						targetBucket = getS3BucketName(targetBucket);
+					}
+
+					if (isFile) {
+						clientV3 = OSFactory.builderV3()
+							.endpoint(sourceConfig.getAuthEndpoint())
+							.credentials(sourceConfig.getUserName(), sourceConfig.getApiKey(), domainIdentifier)
+							.scopeToProject(projectIdentifier)
+							.authenticate();
+
+						if (multipartInfo != null) {
+							InitiateMultipartUploadResult initMultipart = targetS3.initiateMultipartUpload(new InitiateMultipartUploadRequest(targetBucket, targetObject));
+							String uploadId = initMultipart.getUploadId();
+							List<PartETag> partList = new ArrayList<PartETag>();
+							String[] multiPath = multipartInfo.split("/", 2);
+							int partNumber = 0;
+							SwiftObject object = null;
+							do {
+								String partPath = String.format("%08d", partNumber++);
+								partPath = multiPath[1] + partPath;
+								object = clientV3.objectStorage().objects().get(multiPath[0], partPath);
+
+								if (object != null) {
+									DLPayload load = object.download();
+									is = load.getInputStream();
+
+									UploadPartResult partResult = targetS3.uploadPart(new UploadPartRequest().withBucketName(targetBucket).withKey(targetObject)
+											.withUploadId(uploadId).withInputStream(is).withPartNumber(partNumber).withPartSize(object.getSizeInBytes()));
+									partList.add(new PartETag(partNumber, partResult.getETag()));
+									is.close();
+								}
+							} while (object != null);
+							tETag = targetS3.completeMultipartUpload(new CompleteMultipartUploadRequest(targetBucket, targetObject, uploadId, partList)).getETag();
+							if (tagSet.size() > 0) {
+								targetS3.setObjectTagging(new SetObjectTaggingRequest(targetBucket, targetObject, new ObjectTagging(tagSet)));
+							}
+							logger.info("move success : {}", sourcePath);
+						} else if (moveSize != 0 && size > moveSize) {
+							try {
+								InitiateMultipartUploadResult initMultipart = targetS3.initiateMultipartUpload(new InitiateMultipartUploadRequest(targetBucket, targetObject));
+								String uploadId = initMultipart.getUploadId();
+								List<PartETag> partList = new ArrayList<PartETag>();
+								int partNumber = 1;
+								for (long i = 0; i < size; i += moveSize, partNumber++) {
+									long start = i;
+									long end = i + moveSize - 1;
+									if (end >= size) {
+										end = size - 1;
+									}
+									DownloadOptions options = DownloadOptions.create();
+									options.range(Range.from(start, end));
+									DLPayload load = clientV3.objectStorage().objects().get(sourceBucket, sourceObject).download(options);
+									is = load.getInputStream();
+									UploadPartResult partResult = targetS3.uploadPart(new UploadPartRequest().withBucketName(targetBucket).withKey(targetObject)
+											.withUploadId(uploadId).withInputStream(is).withPartNumber(partNumber).withPartSize(end - start + 1));
+									partList.add(new PartETag(partNumber, partResult.getETag()));
+									is.close();
+								}
+
+								tETag = targetS3.completeMultipartUpload(new CompleteMultipartUploadRequest(targetBucket, targetObject, uploadId, partList)).getETag();
+								if (tagSet.size() > 0) {
+									targetS3.setObjectTagging(new SetObjectTaggingRequest(targetBucket, targetObject, new ObjectTagging(tagSet)));
+								}
+								logger.info("move success : {}", sourcePath);
+							} catch (Exception e) {
+								logger.error(e.getMessage());
+							}
+						} else {
+							if (size > GIGA_BYTES) {
+								InitiateMultipartUploadResult initMultipart = targetS3.initiateMultipartUpload(new InitiateMultipartUploadRequest(targetBucket, targetObject));
+								String uploadId = initMultipart.getUploadId();
+								List<PartETag> partList = new ArrayList<PartETag>();
+								int partNumber = 1;
+								for (long i = 0; i < size; i += ONES_MOVE_BYTES, partNumber++) {
+									long start = i;
+									long end = i + ONES_MOVE_BYTES - 1;
+									if (end >= size) {
+										end = size - 1;
+									}
+
+									DownloadOptions options = DownloadOptions.create();
+									options.range(Range.from(start, end));
+									DLPayload load = clientV3.objectStorage().objects().get(sourceBucket, sourceObject).download(options);
+									is = load.getInputStream();
+									UploadPartResult partResult = targetS3.uploadPart(new UploadPartRequest().withBucketName(targetBucket).withKey(targetObject)
+											.withUploadId(uploadId).withInputStream(is).withPartNumber(partNumber).withPartSize(end - start + 1));
+									partList.add(new PartETag(partNumber, partResult.getETag()));
+									is.close();
+								}
+
+								tETag = targetS3.completeMultipartUpload(new CompleteMultipartUploadRequest(targetBucket, targetObject, uploadId, partList)).getETag();
+								if (tagSet.size() > 0) {
+									targetS3.setObjectTagging(new SetObjectTaggingRequest(targetBucket, targetObject, new ObjectTagging(tagSet)));
+								}
+								logger.info("move success : {}", sourcePath);
+							} else {
+								DLPayload load = clientV3.objectStorage().objects().get(sourceBucket, sourceObject).download();
+								is = load.getInputStream();
+								PutObjectRequest putObjectRequest;
+								meta = new ObjectMetadata();
+								meta.setContentLength(size);
+								putObjectRequest = new PutObjectRequest(targetBucket, targetObject, is, meta);
+								putObjectRequest.getRequestClientOptions().setReadLimit(1024 * 1024 * 1024);
+								PutObjectResult result = targetS3.putObject(putObjectRequest);
+								tETag = result.getETag();
+								if (tagSet.size() > 0) {
+									targetS3.setObjectTagging(new SetObjectTaggingRequest(targetBucket, targetObject, new ObjectTagging(tagSet)));
+								}
+								if (etag.equals(tETag)) {
+									logger.info("move success : {}", sourcePath);
+								} else {
+									logger.warn("The etags are different. source : {}, target : {}", etag, tETag);
+									return false;
+								}
+							}
+						}
+					} else {
+						targetObject += "/";
 						meta = new ObjectMetadata();
 						meta.setContentLength(0);
 						is = new ByteArrayInputStream(new byte[0]);
-
 						PutObjectRequest putObjectRequest;
-						putObjectRequest = new PutObjectRequest(targetConfig.getBucket(), targetObject, is, meta);
+						putObjectRequest = new PutObjectRequest(targetBucket, targetObject, is, meta);
+						putObjectRequest.getRequestClientOptions().setReadLimit(1024 * 1024 * 1024);
 						targetS3.putObject(putObjectRequest);
-						if (versionId != null && !versionId.isEmpty()) {
-							logger.info("move success : {}:{}", sourcePath, versionId);
-						} else {
-							logger.info("move success : {}", sourcePath);
+						if (tagSet.size() > 0) {
+							targetS3.setObjectTagging(new SetObjectTaggingRequest(targetBucket, targetObject, new ObjectTagging(tagSet)));
 						}
+						logger.info("move success : {}", sourcePath);
 					}
-				}
-			} catch (AmazonServiceException ase) {
-				if (ase.getErrorCode().compareToIgnoreCase(NO_SUCH_KEY) == 0) {
-					if (versionId == null) {
+				} catch (AmazonServiceException ase) {
+					if (ase.getErrorCode().compareToIgnoreCase(NO_SUCH_KEY) == 0) {
+						logger.warn("{} {}", sourcePath, ase.getErrorMessage());
+					} else if (ase.getErrorMessage().contains(NOT_FOUND)) {
 						logger.warn("{} {}", sourcePath, ase.getErrorMessage());
 					} else {
-						logger.warn("{}:{} {}", sourcePath, versionId, ase.getErrorMessage());
+						logger.warn("{} {} - {}", sourcePath, ase.getErrorCode(), ase.getErrorMessage());
 					}
-				} else if (ase.getErrorMessage().contains(NOT_FOUND)) {
-					logger.warn("{} {}", sourcePath, ase.getErrorMessage());
-				} else {
-					logger.warn("{} {}- {}", sourcePath, ase.getErrorCode(), ase.getErrorMessage());
+					return false;
+				} catch (AmazonClientException ace) {
+					logger.warn("{} {}", sourcePath, ace);
+					return false;
+				} catch (Exception e) {
+					logger.error(e.toString());
 				}
-				return false;
-	        } catch (AmazonClientException ace) {
-	        	logger.warn("{}", sourcePath, ace);
-	        	return false;
-	         } catch (IOException e) {
-				logger.warn("{} {}", sourcePath, e.getMessage());
-				return false;
-			}
+			}		
 			
 			return true;
 		}
@@ -1489,9 +2313,9 @@ public class ObjectMover {
 			isFault = true;
 		}
 		
-		private void retryMoveObject(String path, boolean isDelete, boolean isFile, String versionId, long size) {
+		private void retryMoveObject(String path, boolean isDelete, boolean isFile, String versionId, String etag, String multipartInfo, String tag, long size) {
 			for (int i = 0; i < RETRY_COUNT; i++) {
-				if (moveObject(path, isDelete, isFile, versionId, size)) {
+				if (moveObject(path, isDelete, isFile, versionId, etag, multipartInfo, tag, size)) {
 					return;
 				}
 			}
@@ -1574,6 +2398,9 @@ public class ObjectMover {
 				isFile = Integer.parseInt(jobInfo.get("isFile")) == 1;
 				size = Long.parseLong(jobInfo.get("size"));
 				versionId = jobInfo.get("versionId");
+				etag = jobInfo.get("etag");
+				multipartInfo = jobInfo.get("multipart_info");
+				tag = jobInfo.get("tag");
 				isDelete = Integer.parseInt(jobInfo.get("isDelete")) == 1;
 				isLatest = Integer.parseInt(jobInfo.get("isLatest")) == 1;
 
@@ -1583,11 +2410,14 @@ public class ObjectMover {
 					latestIsFile = isFile;
 					latestSize = size;
 					latestVersionId = versionId;
+					latestETag = etag;
+					latestMultipartInfo = multipartInfo;
+					latestTag = tag;
 					latestIsDelete = isDelete;
 					continue;
 				}
 
-				if (isNAS) {
+				if (type.equalsIgnoreCase(TYPE_FILE)) {
 					if (isFile) {
 						if (size == 0) {
 							retryUploadFile(false, path, null);
@@ -1599,7 +2429,7 @@ public class ObjectMover {
 						retryUploadDirectory(path);
 					}
 				} else {
-					retryMoveObject(path, isDelete, isFile, versionId, size);
+					retryMoveObject(path, isDelete, isFile, versionId, etag, multipartInfo, tag, size);
 				}
 				
 				if (isFault) {
@@ -1613,7 +2443,7 @@ public class ObjectMover {
 			}
 
 			if (!isDoneLatest) {
-				if (isNAS) {
+				if (type.equalsIgnoreCase(TYPE_FILE)) {
 					if (latestIsFile) {
 						if (latestSize == 0) {
 							retryUploadFile(false, latestPath, null);
@@ -1625,7 +2455,7 @@ public class ObjectMover {
 						retryUploadDirectory(latestPath);
 					}
 				} else {
-					retryMoveObject(latestPath, latestIsDelete, latestIsFile, latestVersionId, size);
+					retryMoveObject(latestPath, latestIsDelete, latestIsFile, latestVersionId, latestETag, latestMultipartInfo, latestTag, size);
 				}
 				
 				if (isFault) {
