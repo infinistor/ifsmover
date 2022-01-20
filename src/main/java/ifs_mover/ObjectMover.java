@@ -56,6 +56,7 @@ public class ObjectMover {
 	private final String NO_SUCH_KEY = "NoSuchKey";
 	private final String NOT_FOUND = "Not Found";
 	private final long MEGA_BYTES = 1024 * 1024;
+	private final long GIGA_BYTES = 1024 * 1024 * 1024;
 	
 	public static class Builder {
 		private Config sourceConfig;
@@ -498,15 +499,22 @@ public class ObjectMover {
 								targetRepository.setTagging(targetBucket, targetPath, tagSet);
 							}
 							logger.info("move success : {}", path);
-						} else if (!type.equalsIgnoreCase(Repository.IFS_FILE) && moveSize != 0 && size > moveSize) {
+						} else if ((!type.equalsIgnoreCase(Repository.IFS_FILE) && moveSize != 0 && size > moveSize)
+									|| (type.equalsIgnoreCase(Repository.SWIFT) && size > GIGA_BYTES)) {
 							// send multipart
+							long limitSize = 0L;
+							if (moveSize == 0) {
+								limitSize = 100 * MEGA_BYTES;
+							} else {
+								limitSize = moveSize;
+							}
 							String uploadId = targetRepository.startMultipart(targetBucket, targetPath);
 							List<PartETag> partList = new ArrayList<PartETag>();
 							int partNumber = 1;
 							ObjectData data = null;
-							for (long i = 0; i < size; i += moveSize, partNumber++) {
+							for (long i = 0; i < size; i += limitSize, partNumber++) {
 								long start = i;
-								long end = i + moveSize - 1;
+								long end = i + limitSize - 1;
 								if (end >= size) {
 									end = size - 1;
 								}
