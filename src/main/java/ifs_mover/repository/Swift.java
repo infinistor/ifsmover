@@ -530,7 +530,7 @@ public class Swift implements Repository {
 
                         Map<String, String> info = DBManager.infoExistObject(jobId, obj.getName());
                         if (info.isEmpty()) {
-                            Utils.insertMoveObjectVersion(jobId, !obj.isDirectory(), 
+                            Utils.insertRerunMoveObjectVersion(jobId, !obj.isDirectory(), 
                                 obj.getLastModified().toString(),
                                 size,
                                 obj.getName(), 
