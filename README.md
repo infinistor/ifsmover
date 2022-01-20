@@ -10,16 +10,17 @@
 * NAS(SMB/NFS) / Local 파일시스템의 파일을 InfiniStor 또는 KSAN으로 이관 지원
 * AWS S3의 오브젝트를 InfiniStor 또는 KSAN으로 이관 지원
 * NAS(SMB/NFS) / Local 파일시스템의 파일을 AWS S3로 이관 지원
+* openstack Swift의 오브젝트를 InfiniStor 또는 KSAN으로 이관 지원 - Version 3 Authentication 지원
 * 재수행 옵션(-rerun)을 통해 소스 경로의 신규 및 수정된 오브젝트 및 파일만 추가로 이관하는 기능 제공
 * 상태 확인 옵션(-status)을 통해 현재 수행 중인 이관 작업의 상태를 실시간으로 모니터링 가능 
 * 수행 쓰레드 수 지정 옵션(-thread=`number`)을 통해 이관 작업 부하 및 성능 제어 가능
 
 ### 실행 옵션
 ```sh
-ifs_mover -t=s3 | nas –source=source.conf -target=target.conf -o=ea,perm,time -thread=10 
+ifs_mover -t=s3|file|swift –source=source.conf -target=target.conf -o=ea,perm,time -thread=10 
 Usage : ifs_mover [OPTION] ...
 Move Objects
-        -t=nas|s3               source type, NAS or S3
+        -t=file|s3|swift        source type, FILE(NAS) or S3 or SWIFT
         -source=source.conf     source configuration file path
         -target=target.conf     target configuration file path
         -o=ea,perm,time         object meta info
@@ -41,7 +42,7 @@ Rerun
         -thread=                     thread count
 Check
         -check                  check source and target configuration
-        -t=nas|s3               source type, NAS or S3
+        -t=file|s3|swift        source type, FILE(NAS) or S3 or SWIFT
         -source=source.conf     source configuration file path
         -target=target.conf     target configuration file path
 Status Job
@@ -55,6 +56,14 @@ source.conf
         bucket                  bucket name
         prefix                  PREFIX DIR name from which to start the MOVE
         move_size               The size of the file that you can move at once. (M bytes)
+        user_name               user name for swift
+        api_key                 api key for swift
+        auth_endpoint           http(https)://IP:port/v3 authentication endpoint for swift
+        domain_id               domain id for swift
+        domain_name             domain name for swift
+        project_id              project id for swift
+        project_name            project name for swift
+        container               list of containers(If it is empty, it means all container)
 target.conf
         endpoint                http(https)://IP:Port | region
         access                  Access Key ID
@@ -67,9 +76,11 @@ target.conf
 ## 실행 예시(CLI-Linux)
 ### 설정 파일 체크
 ```sh
-ifs_mover -check -t=nas -source=source.conf -target=target.conf
+ifs_mover -check -t=file -source=source.conf -target=target.conf
 or
 ifs_mover -check -t=s3 -source=source.conf -target=target.conf
+or
+ifs_mover -check -t=swift -source=source.conf -target=target.conf
 ```
 
 ### AWS S3 -> InfiniStor/KSAN 이관 작업 등록 및 실행
@@ -79,7 +90,7 @@ ifs_mover -t=s3 -source=source.conf -target=target.conf -thread=4
 
 ### NAS -> InfiniStor/KSAN 이관 작업 등록 및 실행
 ```sh
-ifs_mover -t=nas -source=source.conf -target=target.conf -thread=4
+ifs_mover -t=file -source=source.conf -target=target.conf -thread=4
 ```
 
 ### Job ID가 1로 배정된 이관 작업을 재수행 
@@ -114,11 +125,19 @@ ifs_mover -jobremove=1
 source.conf 
     mountpoint:     mountPoint
     endpoint:       http(https)://IP:Port | region
-    access:     Access Key ID
-    secret:     Secret Access Key
-    bucket:     Bucket Name
-    prefix:     MOVE를 시작할 PREFIX/DIR 이름 정보
-    move_size:  The size of the file that you can move at once. (M bytes)
+    access:         Access Key ID
+    secret:         Secret Access Key
+    bucket:         Bucket Name
+    prefix:         MOVE를 시작할 PREFIX/DIR 이름 정보
+    move_size:      The size of the file that you can move at once. (M bytes)
+    user_name       user name for swift
+    api_key         api key for swift
+    auth_endpoint   http(https)://IP:port/v3
+    domain_id       domain id for swift
+    domain_name     domain name for swift
+    project_id      project id for swift
+    project_name    project name for swift
+    container       list of containers (If it is empty, it means all container)
 ```
 
 * endpoint : protocol(http|https):// IP:Port | region (AWS)
@@ -135,7 +154,7 @@ target.conf
 
 ### 설정 파일 예시
 
-#### nas -> S3 (/mnt/volume01/move_old_objects/* -> /move-test/*)
+#### file(NAS) -> S3 (/mnt/volume01/move_old_objects/* -> /move-test/*)
 ```sh
 source.conf 
     mountpoint=/mnt/volume01/
@@ -154,7 +173,7 @@ target.conf
     prefix=
 ```
 
-#### nas -> S3 (AWS) (/mnt/volume01/move_old_objects/* -> /move-test/2021_07_20/*)
+#### file(NAS) -> S3 (AWS) (/mnt/volume01/move_old_objects/* -> /move-test/2021_07_20/*)
 ```sh
 source.conf 
     mountpoint=/mnt/volume01/
@@ -249,28 +268,86 @@ target.conf
     prefix=
 ```
 
+#### SWIFT -> S3 (사용자의 test_container/*, test-big-size/* -> /test-container/*, test-big-size/*)
+```sh
+source.conf
+mountpoint=
+endpoint=
+access=
+secret=
+bucket=
+prefix=
+move_size=
+user_name=admin
+api_key=9c7d08adb7414a8a
+auth_endpoint=http://192.168.13.188:5000/v3
+domain_id=default
+domain_name=
+project_id=9327b0988cab4d5c84e297345a4f3c67
+project_name=
+container=test_container,test-big-size
+
+target.conf
+endpoint=http://192.168.13.21:8080
+access=DSDISDSDLKJD98KDA55QFQ
+secret=BdsDsSDsdDSDjksdkTBEFjgUIZav0kFG
+bucket=
+prefix=
+```
+
+#### SWIFT -> S3 (사용자의 모든 containers -> /container1, contatiner2, ...)
+```sh
+source.conf
+mountpoint=
+endpoint=
+access=
+secret=
+bucket=
+prefix=
+move_size=
+user_name=admin
+api_key=9c7d08adb7414a8a
+auth_endpoint=http://192.168.13.188:5000/v3
+domain_id=default
+domain_name=
+project_id=9327b0988cab4d5c84e297345a4f3c67
+project_name=
+container=
+
+target.conf
+endpoint=http://192.168.13.21:8080
+access=DSDISDSDLKJD98KDA55QFQ
+secret=BdsDsSDsdDSDjksdkTBEFjgUIZav0kFG
+bucket=
+prefix=
+```
+
 ### 실행 예시
 #### Job1 - NAS to InfiniStor/KSAN
-* NAS 마운트 포인트(/mnt/mover/moveu/)에서 InfiniStor(ifs-mover-test)로 전체 데이터 마이그레이션 수행
+* NAS 마운트 포인트(/OSDDISK2/mydata/)에서 InfiniStor(ifs-mover-test)로 전체 데이터 마이그레이션 수행
 ![](/images/sample1.png)
 
 #### Job2 - InfiniStor to InfiniStor/KSAN
-* InfiniStor(ifs-mover-test)에서 InfiniStor(ifs-mover-test-target)로 전체 데이터 마이그레이션 수행
+* InfiniStor(ifs-mover-test)에서 InfiniStor(ifs-mover-test2)로 전체 데이터 마이그레이션 수행
 ![](/images/sample2.png)
 
 #### Job3 - InfiniStor to InfiniStor/KSAN
-* InfiniStor(ifs-mover-test-target)에서 InfiniStor(ifs-mover-test-version-target/version)로 전체 데이터 마이그레이션 수행 (Version 정보 포함)
+* InfiniStor(ifs-mover-test2)에서 InfiniStor(ifs-mover-test-version/version)로 전체 데이터 마이그레이션 수행 (prefix:version)
 ![](/images/sample3.png)
+
+#### RERUN Job1 - NAS to InfiniStor/KSAN (RERUN)
+* NAS 마운트 포인트(/OSDDISK2/mydata/)에서 InfiniStor(ifs-mover-test)로 추가된 데이터만 마이그레이션 수행
 ![](/images/sample4.png)
 
-#### Job4 - NAS to InfiniStor/KSAN (RERUN)
-* NAS 마운트 포인트(/mnt/mover/moveu/aws/)에서 AWS S3(new-bucket-test-mover-07-20)로 추가된 데이터만 마이그레이션 수행
+#### Job4 - AWS S3 to InfiniStor/KSAN (Versioning)
+* AWS S3(heoks-mover-test-versioning)에서 InfiniStor(ifs-mover-test-version-from-s3)로 전체 데이터 마이그레이션 수행 (Versioning 포함)
 ![](/images/sample5.png)
-
-#### Job5 - AWS S3 to InfiniStor/KSAN
-* AWS S3(new-bucket-test-mover-07-20)에서 InfiniStor(ifs-mover-test-version-target/version/from-aws0805)로 전체 데이터 마이그레이션 수행
 ![](/images/sample6.png)
 
+#### Job5 - Swift to InfiniStor/KSAN
+* Swift(test_container)에서 InfiniStor(test-container)로 전체 데이터 마이그레이션 수행
+![](/images/sample7.png)
+![](/images/sample8.png)
 
 ## Windows 실행 예시
 * python이 설치되어 있어야 합니다.
@@ -279,7 +356,7 @@ target.conf
 * 네트워크 드라이브를 T: 로 설정한 경우
 ![](/images/network_driver.png)
 
-#### nas -> S3 (T:/source_data/* -> /move-test/*)
+#### file(NAS) -> S3 (T:/source_data/* -> /move-test/*)
 ```sh
 source.conf 
     mountpoint=T:/source_data
@@ -316,17 +393,29 @@ source.conf
 
 #### 설정 파일 체크
 ```sh
-python ifs_mover -check -t=nas -source=source.conf -target=target.conf -thread=4
+python ifs_mover -check -t=file -source=source.conf -target=target.conf -thread=4
 ```
 #### 실행
 ```sh
-python ifs_mover -t=nas -source=source.conf -target=target.conf -thread=4
+python ifs_mover -t=file -source=source.conf -target=target.conf -thread=4
 ```
 
 #### 주의사항
 * Windows에서는 ifs_mover 앞에 python을 붙여주어야 합니다.
+* swift의 objects를 옮기는 경우, target.conf에 bucket을 지정하지 않습니다. container의 이름을 사용합니다.
+* swift의 container가 S3 bucket naming rule에 맞지 않는 경우에는 자동으로 bucket 명을 변경합니다.
 
-
+#### swift container -> S3 bucket 이름 규칙
+* container 이름을 소문자로 변경합니다.
+* container 이름 길이가 3보다 작은 경우 'ifs-' 를 앞에 붙입니다.
+* container 이름 길이가 63보다 큰 경우 63자까지만 bucket 이름으로 사용합니다.
+* '.' or '-' 로 container 이름이 시작하는 경우 '.' or '-' 문자를 버립니다.
+* '.' or '-' 로 container 이름이 끝나는 경우 '.' or '-' 문자를 버립니다.
+* 'xn--'으로 container 이름이 시작하는 경우 'xn--' 문자열을 버립니다.
+* '-s3alias'으로 container 이름이 끝나는 경우 '-s3alias' 문자열을 버립니다.
+* '_'(under score)가  container 이름에 포함된 경우 '-'(dash)로 변경합니다.
+* '..' or '.-' or '-.'이 container 이름에 포함된 경우 '..' or '.-' or '-.' 문자열을 버립니다.
+* 위의 규칙으로도 S3 bucket 이름에 규칙에 맞지 않는 경우 동작하지 않습니다.
 
 ## DB Schema
 ![](/images/heoks_ifs_mover_db_5.png)
@@ -350,6 +439,8 @@ python ifs_mover -t=nas -source=source.conf -target=target.conf -thread=4
 * org.junit.jupiter : junit-jupiter-engine : 5.6.2
 * commons-io : commons-io : 2.11.0
 * javax.xml.bind : jaxb-api : 2.3.0
+* com.github.openstack4j.core : openstack4j : 3.3
+* com.googlecode.json-simple : json-simple : 1.1.1
 
 ## 구동 환경
 
