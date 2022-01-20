@@ -481,17 +481,19 @@ public class IfsS3 implements Repository, S3 {
 					for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
 						count++;
 						String tagging = null;
-						try {
-							GetObjectTaggingResult result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey()));
-							if (result != null && !result.getTagSet().isEmpty()) {
-								JSONObject json = new JSONObject();
-								for (Tag tag: result.getTagSet()) {
-									json.put(tag.getKey(), tag.getValue());
+						if (!versionSummary.isDeleteMarker()) {
+							try {
+								GetObjectTaggingResult result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey(), versionSummary.getVersionId()));
+								if (result != null && !result.getTagSet().isEmpty()) {
+									JSONObject json = new JSONObject();
+									for (Tag tag: result.getTagSet()) {
+										json.put(tag.getKey(), tag.getValue());
+									}
+									tagging = json.toString();
 								}
-								tagging = json.toString();
+							} catch (AmazonServiceException ase) {
+								logger.warn("{}:{} : failed get tagging info - {}", versionSummary.getKey(), versionSummary.getVersionId(), ase.getErrorCode());
 							}
-						} catch (AmazonServiceException ase) {
-							logger.warn("{} : failed get tagging info - {}", versionSummary.getKey(), ase.getErrorCode());
 						}
 						
 						Utils.insertMoveObjectVersion(jobId, versionSummary.getKey().charAt(versionSummary.getKey().length() - 1) != '/', 
@@ -579,13 +581,19 @@ public class IfsS3 implements Repository, S3 {
 					listing = client.listVersions(request);
 					for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
 						String tagging = null;
-						GetObjectTaggingResult result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey()));
-						if (result != null && !result.getTagSet().isEmpty()) {
-							JSONObject json = new JSONObject();
-							for (Tag tag: result.getTagSet()) {
-								json.put(tag.getKey(), tag.getValue());
+						if (!versionSummary.isDeleteMarker()) {
+							try {
+								GetObjectTaggingResult result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey(), versionSummary.getVersionId()));
+								if (result != null && !result.getTagSet().isEmpty()) {
+									JSONObject json = new JSONObject();
+									for (Tag tag: result.getTagSet()) {
+										json.put(tag.getKey(), tag.getValue());
+									}
+									tagging = json.toString();
+								}
+							} catch (AmazonServiceException ase) {
+								logger.warn("{}:{} : failed get tagging info - {}", versionSummary.getKey(), versionSummary.getVersionId(), ase.getErrorCode());
 							}
-							tagging = json.toString();
 						}
 						Map<String, String> info = DBManager.infoExistObjectVersion(jobId, versionSummary.getKey(), versionSummary.getVersionId());
 						if (info.isEmpty()) {
