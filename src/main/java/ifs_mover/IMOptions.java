@@ -276,7 +276,7 @@ public class IMOptions {
 		
 		System.out.println("Check");
 		System.out.println("\t" + String.format("%-20s\t%s", "-check", "check source and target configuration"));
-		System.out.println("\t" + String.format("%-20s\t%s", "-t=nas|s3","source type, NAS or S3"));
+		System.out.println("\t" + String.format("%-20s\t%s", "-t=file|s3|swift","source type, FILE(NAS) or S3 or SWIFT"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-source=source.conf", "source configuration file path"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-target=target.conf", "target configuration file path"));
 		
@@ -299,7 +299,7 @@ public class IMOptions {
 		System.out.println("\t" + String.format("%-20s\t%s", "domain_name", "domain name for swift"));
 		System.out.println("\t" + String.format("%-20s\t%s", "project_id", "project id for swift"));
 		System.out.println("\t" + String.format("%-20s\t%s", "project_name", "project name for swift"));
-		System.out.println("\t" + String.format("%-20s\t%s", "container", "container name for swift"));
+		System.out.println("\t" + String.format("%-20s\t%s", "container", "list of containers(If it is empty, it means all container)"));
 
 		System.out.println("target.conf");
 		System.out.println("\t" + String.format("%-20s\t%s", "endpoint", "http://ip:port"));

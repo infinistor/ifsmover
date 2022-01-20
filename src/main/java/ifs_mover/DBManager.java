@@ -30,7 +30,7 @@ public class DBManager {
 	private static final Logger logger = LoggerFactory.getLogger(DBManager.class);
 	
 	private static Connection con;
-	private static final String NAS = "nas";
+	private static final String IFS_FILE = "file";
 	private static final String JDBC = "org.sqlite.JDBC";
 	private static final String DB_FILE_URL = "jdbc:sqlite:ifs-mover.db";
 	
@@ -38,6 +38,41 @@ public class DBManager {
 	private static final int CACHE_SIZE = 10000;
 	private static final int WAIT_TIMEOUT = 20000;
 	
+	private static final String SINGLE_QUOTATION = "'";
+	private static final String UNDER_OBJECTS = "_OBJECTS";
+	private static final String UNDER_INDEX = "_INDEX";
+	private static final String WHERE_JOB_ID = " WHERE job_id = ";
+
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_PATH = "path";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_ISFILE = "isFile";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_SIZE = "size";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_VERSIONID = "versionId";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_ETAG = "etag";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_MULTIPART_INFO = "multipart_info";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_TAG = "tag";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_ISDELETE = "isDelete";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_ISLATEST = "isLatest";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE = "object_state";
+	public static final String MOVE_OBJECTS_TABLE_COLUMN_MTIME = "mtime";
+	
+	public static final String JOB_TABLE_COLUMN_JOB_ID = "job_id";
+	public static final String JOB_TABLE_COLUMN_JOB_STATE = "job_state";
+	public static final String JOB_TABLE_COLUMN_PID = "pid";
+	public static final String JOB_TABLE_COLUMN_JOB_TYPE = "job_type";
+	public static final String JOB_TABLE_COLUMN_SOURCE_POINT = "source_point";
+	public static final String JOB_TABLE_COLUMN_TARGET_POINT = "target_point";
+	public static final String JOB_TABLE_COLUMN_OBJECTS_COUNT = "objects_count";
+	public static final String JOB_TABLE_COLUMN_OBJECTS_SIZE = "objects_size";
+	public static final String JOB_TABLE_COLUMN_MOVED_OBJECTS_COUNT = "moved_objects_count";
+	public static final String JOB_TABLE_COLUMN_MOVED_OBJECTS_SIZE = "moved_objects_size";
+	public static final String JOB_TABLE_COLUMN_FAILED_COUNT = "failed_count";
+	public static final String JOB_TABLE_COLUMN_FAILED_SIZE = "failed_size";
+	public static final String JOB_TABLE_COLUMN_SKIP_OBJECTS_COUNT = "skip_objects_count";
+	public static final String JOB_TABLE_COLUMN_SKIP_OBJECTS_SIZE = "skip_objects_size";
+	public static final String JOB_TABLE_COLUMN_START = "start";
+	public static final String JOB_TABLE_COLUMN_END = "end";
+	public static final String JOB_TABLE_COLUMN_ERROR_DESC = "error_desc";
+
 	private static final String CREATE_JOB_TABLE =
 			"CREATE TABLE IF NOT EXISTS 'JOB' (\n"
 			+ "'job_id' INTEGER NOT NULL,\n"
@@ -79,7 +114,38 @@ public class DBManager {
 	private static final String SQL_INSERT_JOB = "INSERT INTO JOB(pid, job_type, source_point, target_point, start) VALUES(?, ?, ?, ?, datetime('now', 'localtime'))";
 	private static final String SQL_UPDATE_JOB_START = "UPDATE JOB SET start = datetime('now', 'localtime') WHERE job_id =";
 	private static final String SQL_UPDATE_JOB_END = "UPDATE JOB SET end = datetime('now', 'localtime') WHERE job_id =";
+	private static final String SQL_INIT_JOB_RERUN = "UPDATE JOB SET objects_count = 0, objects_size = 0, moved_objects_count = 0, moved_objects_size = 0, failed_count = 0, failed_size = 0, skip_objects_count = 0, skip_objects_size = 0 WHERE job_id = ";
+	private static final String SQL_INIT_MOVE_OBJECT_RERUN = "_OBJECTS SET skip_check = 0";
+	private static final String SQL_INSERT_MOVE_OBJECT = "_OBJECTS (path, object_state, isfile, mtime, size, etag, multipart_info, tag) VALUES(?, 1, ?, ?, ?, ?, ?, ?)";
+	private static final String SQL_RERUN_INSERT_MOVE_OBJECT = "_OBJECTS (path, object_state, skip_check, isfile, mtime, size, etag, multipart_info, tag) VALUES(?, 1, 1, ?, ?, ?, ?, ?, ?)";
+	private static final String SQL_INSERT_MOVE_OBJECT_VERSIONING = "_OBJECTS (path, object_state, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+	private static final String SQL_RERUN_INSERT_MOVE_OBJECT_VERSIONING = "_OBJECTS (path, object_state, skip_check, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 	
+	private static final String SQL_GET_MOVE_OBJECT_INFO = "SELECT path, isfile, size, version_id, etag, multipart_info, tag, isdelete, islatest FROM JOB_";
+	private static final String SQL_GET_MOVE_OBJECT_INFO_WHERE = "_OBJECTS WHERE object_state = 1 and isdelete = 0 and sequence > ";
+	private static final String SQL_GET_MOVE_OBJECT_INFO_WHERE_DELETE = "_OBJECTS WHERE object_state = 1 and isdelete = 1 and sequence > ";
+	private static final String SQL_ORDER_BY_SEQUENCE = " ORDER BY sequence LIMIT ";
+	private static final String SQL_SET_MOVE_OBJECT = "_OBJECTS SET object_state = 2 WHERE path = ? and version_id is null";
+	private static final String SQL_SET_MOVE_OBJECT_VERSIONID = "_OBJECTS SET object_state = 2 WHERE path = ? and version_id = ?";
+	private static final String SQL_SET_MOVE_OBJECT_COMPLETE = "_OBJECTS SET object_state = 3 WHERE path = ? and version_id is null";
+	private static final String SQL_SET_MOVE_OBJECT_VERSIONID_COMPLETE = "_OBJECTS SET object_state = 3 WHERE path = ? and version_id = ?";
+	private static final String SQL_SET_MOVE_OBJECT_FAILED = "_OBJECTS SET object_state = 4, error_date = datetime('now', 'localtime'), error_code = ?, error_desc = ? WHERE path = ? and version_id is null";
+	private static final String SQL_SET_MOVE_OBJECT_VERSIONID_FAILED = "_OBJECTS SET object_state = 4, error_date = datetime('now', 'localtime'), error_code = ?, error_desc = ? WHERE path = ? and version_id = ?";
+	private static final String SQL_GET_OBJECT_STATE = "SELECT object_state FROM JOB_";
+	private static final String SQL_GET_OBJECT_INFO = "SELECT object_state, mtime FROM JOB_";
+	private static final String SQL_SET_MOVE_OBJECT_INFO = "_OBJECTS SET mtime = ?, size = ? WHERE path = '";
+	private static final String SQL_GET_JOB_ID = "SELECT job_id FROM JOB WHERE pid = ";
+	private static final String SQL_GET_JOB_TYPE = "SELECT job_type FROM JOB WHERE job_id = ";
+	private static final String SQL_GET_MTIME = "SELECT mtime FROM JOB_";
+	private static final String SQL_SET_PID = "UPDATE JOB SET pid = ";
+	private static final String SQL_GET_PID = "SELECT pid FROM JOB WHERE job_id = ";
+	private static final String SQL_GET_MAX_SEQUENCE = "SELECT MAX(sequence) FROM JOB_";
+	private static final String SQL_DELETE_JOB = "DELETE FROM JOB_";
+	private static final String SQL_DELETE_JOB_WHERE = "_OBJECTS WHERE skip_check = 0";
+
+	private static final String SQL_DROP_MOVE_OBJECT = "DROP TABLE JOB_";
+	private static final String SQL_DROP_MOVE_OBJECT_INDEX = "DROP INDEX IF EXISTS PATH_";
+
 	private static final String SQL_OBJECT_WHERE_PATH = "_OBJECTS WHERE path = '";
 	private static final String SQL_SKIP_CHECK = "_OBJECTS SET object_state = 1, skip_check = 1, mtime = '";
 	private static final String SQL_SKIP_CHECK_WHERE_PATH = "_OBJECTS SET skip_check = 1 WHERE path = '";
@@ -166,7 +232,7 @@ public class DBManager {
 		try(PreparedStatement pstmt = con.prepareStatement(SQL_INSERT_JOB);) {
 			pstmt.setInt(1, Integer.parseInt(pid));
 			pstmt.setString(2, select);
-			if (NAS.compareToIgnoreCase(select) == 0) {
+			if (IFS_FILE.compareToIgnoreCase(select) == 0) {
 				pstmt.setString(3, sourceConfig.getMountPoint() + sourceConfig.getPrefix());
 			} else {
 				pstmt.setString(3, sourceConfig.getBucket());
@@ -182,7 +248,7 @@ public class DBManager {
 	public static String getJobId(String pid) {
 		String jobId = "";
 		open();
-		final String sql = "SELECT job_id FROM JOB WHERE pid = " + pid;
+		final String sql = SQL_GET_JOB_ID + pid;
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 			if (rs.next()) {
@@ -292,9 +358,9 @@ public class DBManager {
 		}
 	}
 	
-	public static boolean insertMoveObject(String jobId, boolean isFile, String mTime, long size, String path) {
+	public static boolean insertMoveObject(String jobId, boolean isFile, String mTime, long size, String path, String etag, String tag) {
 		open();
-		String sql = INSERT_JOB_ID + jobId + "_OBJECTS (path, object_state, isfile, mtime, size) VALUES(?, 1, ?, ?, ?)";
+		String sql = INSERT_JOB_ID + jobId + SQL_INSERT_MOVE_OBJECT;
 		try (PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, path);
 			if (isFile) {
@@ -304,6 +370,17 @@ public class DBManager {
 			}
 			pstmt.setString(3, mTime);
 			pstmt.setLong(4, size);
+			if (etag == null || etag.isEmpty()) {
+				pstmt.setNull(5, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(5, etag);
+			}
+			if (tag == null || tag.isEmpty()) {
+				pstmt.setNull(6, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(6, tag);
+			}
+
 			if (pstmt.executeUpdate() == 1) {
 				return true;
 			}
@@ -316,7 +393,7 @@ public class DBManager {
 
 	public static boolean insertMoveObjectVersioning(String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest) {
 		open();
-		String sql = INSERT_JOB_ID + jobId + "_OBJECTS (path, object_state, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+		String sql = INSERT_JOB_ID + jobId + SQL_INSERT_MOVE_OBJECT_VERSIONING;
 		try  (PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, path);
 			
@@ -378,7 +455,7 @@ public class DBManager {
 	
 	public static boolean updateToMoveObject(String jobId, String mTime, long size, String path) {
 		open();
-		String sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + "'";
+		String sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SINGLE_QUOTATION;
 		try (Statement stmt = con.createStatement()) {
 			if (stmt.executeUpdate(sql) == 1) {
 				return true;
@@ -396,7 +473,7 @@ public class DBManager {
 		if (versionId == null || versionId.isEmpty()) { 
 			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
 		} else {
-			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SQL_VERSIONID + versionId + "'";
+			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
 		}
 
 		try (Statement stmt = con.createStatement()) {
@@ -410,9 +487,9 @@ public class DBManager {
 		return false;
 	}
 	
-	public static boolean insertRerunMoveObject(String jobId, boolean isFile, String mTime, long size, String path) {
+	public static boolean insertRerunMoveObject(String jobId, boolean isFile, String mTime, long size, String path, String etag, String multipartInfo, String tag) {
 		open();
-		String sql = INSERT_JOB_ID + jobId + "_OBJECTS (path, object_state, skip_check, isfile, mtime, size) VALUES(?, 1, 1, ?, ?, ?)";
+		String sql = INSERT_JOB_ID + jobId + SQL_RERUN_INSERT_MOVE_OBJECT;
 		try(PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, path);
 			if (isFile) {
@@ -422,6 +499,23 @@ public class DBManager {
 			}
 			pstmt.setString(3, mTime);
 			pstmt.setLong(4, size);
+			if (etag == null || etag.isEmpty()) {
+				pstmt.setNull(5, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(5, etag);
+			}
+			
+			if (multipartInfo == null || multipartInfo.isEmpty()) {
+				pstmt.setNull(6, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(6, multipartInfo);
+			}
+
+			if (tag == null || tag.isEmpty()) {
+				pstmt.setNull(7, java.sql.Types.NULL);
+			} else {
+				pstmt.setString(7, tag);
+			}
 			if (pstmt.executeUpdate() == 1) {
 				return true;
 			}
@@ -434,7 +528,7 @@ public class DBManager {
 
 	public static boolean insertRerunMoveObjectVersion(String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest) {
 		open();
-		String sql = INSERT_JOB_ID + jobId + "_OBJECTS (path, object_state, skip_check, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+		String sql = INSERT_JOB_ID + jobId + SQL_RERUN_INSERT_MOVE_OBJECT_VERSIONING;
 		try(PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, path);
 			
@@ -495,7 +589,7 @@ public class DBManager {
 	
 	public static boolean updateRerunSkipObject(String jobId, String path) {
 		open();
-		String sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + "'";
+		String sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SINGLE_QUOTATION;
 		try(Statement stmt = con.createStatement()) {
 			if (stmt.executeUpdate(sql) == 1) {
 				return true;
@@ -513,7 +607,7 @@ public class DBManager {
 		if (versionId == null || versionId.isEmpty()) {
 			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
 		} else {
-			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SQL_VERSIONID + versionId + "'";
+			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
 		}
 
 		try(Statement stmt = con.createStatement()) {
@@ -529,7 +623,7 @@ public class DBManager {
 
 	public static void dropMoveObjectTable(String jobId) {
 		open();
-		String sql = "DROP TABLE JOB_" + jobId + "_OBJECTS";
+		String sql = SQL_DROP_MOVE_OBJECT + jobId + UNDER_OBJECTS;
 		try(Statement stmt = con.createStatement()) {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
@@ -539,7 +633,7 @@ public class DBManager {
 	
 	public static void dropMoveObjectIndex(String jobId) {
 		open();
-		String sql = "DROP INDEX IF EXISTS PATH_" + jobId + "_INDEX";
+		String sql = SQL_DROP_MOVE_OBJECT_INDEX + jobId + UNDER_INDEX;
 		try(Statement stmt = con.createStatement()) {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
@@ -589,7 +683,7 @@ public class DBManager {
 	public static synchronized String getJobType(String jobId) {
 		String jobType = null;
 		open();
-		String sql = "SELECT job_type FROM JOB WHERE job_id = " + jobId;
+		String sql = SQL_GET_JOB_TYPE + jobId;
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 			if (rs.next()) {
@@ -603,7 +697,7 @@ public class DBManager {
 	
 	public static synchronized void setProcessId(String jobId, String pid) {
 		open();
-		String sql = "UPDATE JOB SET pid = " + pid + " WHERE job_id = " + jobId;
+		String sql = SQL_SET_PID + pid + WHERE_JOB_ID + jobId;
 		try (Statement stmt = con.createStatement()) {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
@@ -618,7 +712,7 @@ public class DBManager {
 			return null;
 		}
 
-		String sql = "SELECT pid FROM JOB WHERE job_id = " + jobId;
+		String sql = SQL_GET_PID + jobId;
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 			if (rs.next()) {
@@ -652,22 +746,22 @@ public class DBManager {
 			while (rs.next()) {
 				info = new HashMap<String, String>();
 				
-				info.put("jobId", rs.getString(1));
-				info.put("jobState", rs.getString(2));
-				info.put("jobType", rs.getString(3));
-				info.put("sourcePoint", rs.getString(4));
-				info.put("targetPoint", rs.getString(5));
-				info.put("objectsCount", rs.getString(6));
-				info.put("objectsSize", rs.getString(7));
-				info.put("movedObjectsCount", rs.getString(8));
-				info.put("movedObjectsSize", rs.getString(9));
-				info.put("failedCount", rs.getString(10));
-				info.put("failedSize", rs.getString(11));
-				info.put("skipObjectsCount", rs.getString(12));
-				info.put("skipObjectsSize", rs.getString(13));
-				info.put("startTime", rs.getString(14));
-				info.put("endTime", rs.getString(15));
-				info.put("errorDesc", rs.getString(16));
+				info.put(JOB_TABLE_COLUMN_JOB_ID, rs.getString(1));
+				info.put(JOB_TABLE_COLUMN_JOB_STATE, rs.getString(2));
+				info.put(JOB_TABLE_COLUMN_JOB_TYPE, rs.getString(3));
+				info.put(JOB_TABLE_COLUMN_SOURCE_POINT, rs.getString(4));
+				info.put(JOB_TABLE_COLUMN_TARGET_POINT, rs.getString(5));
+				info.put(JOB_TABLE_COLUMN_OBJECTS_COUNT, rs.getString(6));
+				info.put(JOB_TABLE_COLUMN_OBJECTS_SIZE, rs.getString(7));
+				info.put(JOB_TABLE_COLUMN_MOVED_OBJECTS_COUNT, rs.getString(8));
+				info.put(JOB_TABLE_COLUMN_MOVED_OBJECTS_SIZE, rs.getString(9));
+				info.put(JOB_TABLE_COLUMN_FAILED_COUNT, rs.getString(10));
+				info.put(JOB_TABLE_COLUMN_FAILED_SIZE, rs.getString(11));
+				info.put(JOB_TABLE_COLUMN_SKIP_OBJECTS_COUNT, rs.getString(12));
+				info.put(JOB_TABLE_COLUMN_SKIP_OBJECTS_SIZE, rs.getString(13));
+				info.put(JOB_TABLE_COLUMN_START, rs.getString(14));
+				info.put(JOB_TABLE_COLUMN_END, rs.getString(15));
+				info.put(JOB_TABLE_COLUMN_ERROR_DESC, rs.getString(16));
 
 				list.add(info);
 			}
@@ -686,7 +780,7 @@ public class DBManager {
 	
 	public static synchronized void updateJobRerun(String jobId) {
 		open();
-		String sql = "UPDATE JOB SET objects_count = 0, objects_size = 0, moved_objects_count = 0, moved_objects_size = 0, failed_count = 0, failed_size = 0, skip_objects_count = 0, skip_objects_size = 0 WHERE job_id = " + jobId;
+		String sql = SQL_INIT_JOB_RERUN + jobId;
 		try (Statement stmt = con.createStatement()) {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
@@ -696,7 +790,7 @@ public class DBManager {
 	
 	public static void updateObjectsRerun(String jobId) {
 		open();
-		String sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET skip_check = 0";
+		String sql = UPDATE_JOB_ID + jobId + SQL_INIT_MOVE_OBJECT_RERUN;
 		try (Statement stmt = con.createStatement()) {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
@@ -707,7 +801,7 @@ public class DBManager {
 	public static int stateWhenExistObject(String jobId, String path) {
 		open();
 		int state = -1;
-		String sql = "SELECT object_state FROM JOB_" + jobId + SQL_OBJECT_WHERE_PATH + path + "'";
+		String sql = SQL_GET_OBJECT_STATE + jobId + SQL_OBJECT_WHERE_PATH + path + SINGLE_QUOTATION;
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 			if (rs.next()) {
@@ -723,13 +817,13 @@ public class DBManager {
 		open();
 		Map<String, String> info = new HashMap<String, String>();	
 		String sql;
-		sql = "SELECT object_state, mtime FROM JOB_" + jobId + SQL_OBJECT_WHERE_PATH + path + "'";
+		sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH + path + SINGLE_QUOTATION;
 
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 			if (rs.next()) {
-				info.put("object_state", rs.getString(1));
-				info.put("mtime", rs.getString(2));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE, rs.getString(1));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_MTIME, rs.getString(2));
 			} 
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
@@ -742,16 +836,16 @@ public class DBManager {
 		Map<String, String> info = new HashMap<String, String>();	
 		String sql;
 		if (versionId == null || versionId.isEmpty()) {
-			sql = "SELECT object_state, mtime FROM JOB_" + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
+			sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
 		} else {
-			sql = "SELECT object_state, mtime FROM JOB_" + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID + versionId + "'";
+			sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
 		}
 
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 			if (rs.next()) {
-				info.put("object_state", rs.getString(1));
-				info.put("mtime", rs.getString(2));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE, rs.getString(1));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_MTIME, rs.getString(2));
 			} 
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
@@ -761,7 +855,7 @@ public class DBManager {
 	
 	public static void updateObjectInfo(String jobId, String path, String mTime, long size) {
 		open();
-		String sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET mtime = ?, size = ? WHERE path = '" + path + "'";
+		String sql = UPDATE_JOB_ID + jobId + SQL_SET_MOVE_OBJECT_INFO + path + SINGLE_QUOTATION;
 		try (PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, mTime);
 			pstmt.setLong(2, size);
@@ -774,7 +868,7 @@ public class DBManager {
 	public static String getMtime(String jobId, String path) {
 		open();
 		String mtime = null;
-		String sql = "SELECT mtime FROM JOB_" + jobId + SQL_OBJECT_WHERE_PATH + path + "'";
+		String sql = SQL_GET_MTIME + jobId + SQL_OBJECT_WHERE_PATH + path + SINGLE_QUOTATION;
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 			if (rs.next()) {
@@ -817,13 +911,13 @@ public class DBManager {
 	}
 
 
-	public static synchronized boolean updateObjectVersionMove(String jobId, String path, String versionId) {
+	public static synchronized boolean updateObjectMove(String jobId, String path, String versionId) {
 		open();
 		String sql;
 		if (versionId == null || versionId.isEmpty()) {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2 WHERE path = ? and version_id is null";
+			sql = UPDATE_JOB_ID + jobId + SQL_SET_MOVE_OBJECT;
 		} else {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2 WHERE path = ? and version_id = ?";
+			sql = UPDATE_JOB_ID + jobId + SQL_SET_MOVE_OBJECT_VERSIONID;
 		}
 
 		try (PreparedStatement pstmt = con.prepareStatement(sql)) {
@@ -841,13 +935,13 @@ public class DBManager {
 		return false;
 	}
 	
-	public static synchronized boolean updateObjectVersionMoveComplete(String jobId, String path, String versionId) {
+	public static synchronized boolean updateObjectMoveComplete(String jobId, String path, String versionId) {
 		open();
 		String sql;
 		if (versionId == null || versionId.isEmpty()) {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3 WHERE path = ? and version_id is null";
+			sql = UPDATE_JOB_ID + jobId + SQL_SET_MOVE_OBJECT_COMPLETE;
 		} else {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3 WHERE path = ? and version_id = ?";
+			sql = UPDATE_JOB_ID + jobId + SQL_SET_MOVE_OBJECT_VERSIONID_COMPLETE;
 		}
 		try (PreparedStatement pstmt = con.prepareStatement(sql)) {
 			pstmt.setString(1, path);
@@ -864,13 +958,13 @@ public class DBManager {
 		return false;
 	}
 
-	public static synchronized boolean updateObjectVersionMoveEventFailed(String jobId, String path, String versionId, String errorCode, String errorMessage) {
+	public static synchronized boolean updateObjectMoveEventFailed(String jobId, String path, String versionId, String errorCode, String errorMessage) {
 		open();
 		String sql;
 		if (versionId == null || versionId.isEmpty()) {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 4, error_date = datetime('now', 'localtime'), error_code = ?, error_desc = ? WHERE path = ? and version_id is null";
+			sql = UPDATE_JOB_ID + jobId + SQL_SET_MOVE_OBJECT_FAILED;
 		} else {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 4, error_date = datetime('now', 'localtime'), error_code = ?, error_desc = ? WHERE path = ? and version_id = ?";
+			sql = UPDATE_JOB_ID + jobId + SQL_SET_MOVE_OBJECT_VERSIONID_FAILED;
 		}
 
 		try (PreparedStatement pstmt = con.prepareStatement(sql)) {
@@ -903,7 +997,7 @@ public class DBManager {
 	
 	public static void deleteCheckObjects(String jobId) {
 		open();
-		String sql = "DELETE FROM JOB_" + jobId + "_OBJECTS WHERE skip_check = 0";
+		String sql = SQL_DELETE_JOB + jobId + SQL_DELETE_JOB_WHERE;
 		try (Statement stmt = con.createStatement()) {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
@@ -913,22 +1007,22 @@ public class DBManager {
 
 	public static synchronized List<Map<String, String>> getToMoveObjectsInfo(String jobId, long sequence, long limit) {
 		open();
-		String sql = "SELECT path, isfile, size, version_id, etag, multipart_info, tag, isdelete, islatest FROM JOB_" + jobId + "_OBJECTS WHERE object_state = 1 and isdelete = 0 and sequence > " + sequence + " ORDER BY sequence LIMIT " + limit;
+		String sql = SQL_GET_MOVE_OBJECT_INFO + jobId + SQL_GET_MOVE_OBJECT_INFO_WHERE + sequence + SQL_ORDER_BY_SEQUENCE + limit;
 		List<Map<String, String>> list = new ArrayList<Map<String, String>>();
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 	   		while (rs.next()) {
 		   		Map<String, String> info = new HashMap<String, String>();
 		   
-		   		info.put("path", rs.getString(1));
-		   		info.put("isFile", rs.getString(2));
-		   		info.put("size", rs.getString(3));
-		   		info.put("versionId", rs.getString(4));
-				info.put("etag", rs.getString(5));
-				info.put("multipart_info", rs.getString(6));
-				info.put("tag", rs.getString(7));
-		   		info.put("isDelete", rs.getString(8));
-				info.put("isLatest", rs.getString(9));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_PATH, rs.getString(1));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_ISFILE, rs.getString(2));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_SIZE, rs.getString(3));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_VERSIONID, rs.getString(4));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_ETAG, rs.getString(5));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_MULTIPART_INFO, rs.getString(6));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_TAG, rs.getString(7));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_ISDELETE, rs.getString(8));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_ISLATEST, rs.getString(9));
 				
 		   		list.add(info);
 			}
@@ -941,22 +1035,22 @@ public class DBManager {
 
 	public static synchronized List<Map<String, String>> getToDeleteObjectsInfo(String jobId, long sequence, long limit) {
 		open();
-		String sql = "SELECT path, isfile, size, version_id, etag, multipart_info, tag, isdelete, islatest FROM JOB_" + jobId + "_OBJECTS WHERE object_state = 1 and isdelete = 1 and sequence > " + sequence + " ORDER BY sequence LIMIT " + limit;
+		String sql = SQL_GET_MOVE_OBJECT_INFO + jobId + SQL_GET_MOVE_OBJECT_INFO_WHERE_DELETE + sequence + SQL_ORDER_BY_SEQUENCE + limit;
 		List<Map<String, String>> list = new ArrayList<Map<String, String>>();
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 	   		while (rs.next()) {
 		   		Map<String, String> info = new HashMap<String, String>();
 		   
-		   		info.put("path", rs.getString(1));
-		   		info.put("isFile", rs.getString(2));
-		   		info.put("size", rs.getString(3));
-		   		info.put("versionId", rs.getString(4));
-				info.put("etag", rs.getString(5));
-				info.put("multipartInfo", rs.getString(6));
-				info.put("tag", rs.getString(7));
-		   		info.put("isDelete", rs.getString(8));
-				info.put("isLatest", rs.getString(9));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_PATH, rs.getString(1));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_ISFILE, rs.getString(2));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_SIZE, rs.getString(3));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_VERSIONID, rs.getString(4));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_ETAG, rs.getString(5));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_MULTIPART_INFO, rs.getString(6));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_TAG, rs.getString(7));
+		   		info.put(MOVE_OBJECTS_TABLE_COLUMN_ISDELETE, rs.getString(8));
+				info.put(MOVE_OBJECTS_TABLE_COLUMN_ISLATEST, rs.getString(9));
 				
 		   		list.add(info);
 			}
@@ -988,7 +1082,7 @@ public class DBManager {
 	public static long getMaxSequence(String jobId) {
 		open();
 		long maxSequence = 0;
-		String sql = "SELECT MAX(sequence) FROM JOB_" + jobId + "_OBJECTS";
+		String sql = SQL_GET_MAX_SEQUENCE + jobId + UNDER_OBJECTS;
 		try (Statement stmt = con.createStatement();
 			 ResultSet rs = stmt.executeQuery(sql);) {
 			if (rs.next()) {

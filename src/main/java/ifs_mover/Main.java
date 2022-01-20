@@ -21,9 +21,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import ifs_mover.repository.Repository;
+
 public class Main {
 	private static final Logger logger = LoggerFactory.getLogger(Main.class);
-	public static final String NAS = "nas";
 	private static final int THREAD_COUNT = 5;
 	
 	private static final long UNIT_G = (1024 * 1024 * 1024);
@@ -84,8 +85,6 @@ public class Main {
 				.targetConfig(options.getTargetConfig())
 				.threadCount(threadCount)
 				.type(options.getType())
-				.isSourceAWS(options.getSourceConfig().isAWS())
-				.isTargetAWS(options.getTargetConfig().isAWS())
 				.isRerun(false)
 				.build();
 			
@@ -108,15 +107,13 @@ public class Main {
 					.targetConfig(options.getTargetConfig())
 					.threadCount(threadCount)
 					.type(options.getType())
-					.isSourceAWS(options.getSourceConfig().isAWS())
-					.isTargetAWS(options.getTargetConfig().isAWS())
 					.isRerun(false)
 					.build();
 
 			objectMover.init();
 			DBManager.updateJobState(jobId, type);
 			
-			objectMover.startVersion();
+			objectMover.moveObjects();
 			DBManager.updateJobState(jobId, IMOptions.WORK_TYPE.COMPLETE);
 			DBManager.updateJobEnd(jobId);
 			logger.info(IFS_MOVER_END, pid);
@@ -182,9 +179,7 @@ public class Main {
 					.sourceConfig(options.getSourceConfig())
 					.targetConfig(options.getTargetConfig())
 					.threadCount(threadCount)
-					.type(options.getType())
-					.isSourceAWS(options.getSourceConfig().isAWS())
-					.isTargetAWS(options.getTargetConfig().isAWS())
+					.type(job_type)
 					.isRerun(true)
 					.build();
 			DBManager.updateJobStart(jobId);
@@ -194,7 +189,7 @@ public class Main {
 
 			rerunObjectMover.init();
 			DBManager.updateJobState(jobId, IMOptions.WORK_TYPE.RERUN_MOVE);
-			rerunObjectMover.startVersion();
+			rerunObjectMover.moveObjects();
 			DBManager.updateJobState(jobId, IMOptions.WORK_TYPE.COMPLETE);
 			DBManager.updateJobEnd(jobId);
 			logger.info("IFS_MOVER({}) RERUN END", pid);
@@ -242,22 +237,22 @@ public class Main {
 		}
 	
 		for (Map<String, String> info : list) {
-			jobId = info.get("jobId");
-			jobState = Integer.parseInt(info.get("jobState"));
-			jobType = info.get("jobType");
-			sourcePoint = info.get("sourcePoint");
-			targetPoint = info.get("targetPoint");
-			objectsCount = Long.parseLong(info.get("objectsCount"));
-			objectsSize = Long.parseLong(info.get("objectsSize"));
-			movedObjectsCount = Long.parseLong(info.get("movedObjectsCount"));
-			movedObjectsSize = Long.parseLong(info.get("movedObjectsSize"));
-			failedCount = Long.parseLong(info.get("failedCount"));
-			failedSize = Long.parseLong(info.get("failedSize"));
-			skipObjectsCount = Long.parseLong(info.get("skipObjectsCount"));
-			skipObjectsSize = Long.parseLong(info.get("skipObjectsSize"));
-			startTime = info.get("startTime");
-			endTime = info.get("endTime");
-			errorDesc = info.get("errorDesc");
+			jobId = info.get(DBManager.JOB_TABLE_COLUMN_JOB_ID);
+			jobState = Integer.parseInt(info.get(DBManager.JOB_TABLE_COLUMN_JOB_STATE));
+			jobType = info.get(DBManager.JOB_TABLE_COLUMN_JOB_TYPE);
+			sourcePoint = info.get(DBManager.JOB_TABLE_COLUMN_SOURCE_POINT);
+			targetPoint = info.get(DBManager.JOB_TABLE_COLUMN_TARGET_POINT);
+			objectsCount = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_OBJECTS_COUNT));
+			objectsSize = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_OBJECTS_SIZE));
+			movedObjectsCount = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_MOVED_OBJECTS_COUNT));
+			movedObjectsSize = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_MOVED_OBJECTS_SIZE));
+			failedCount = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_FAILED_COUNT));
+			failedSize = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_FAILED_SIZE));
+			skipObjectsCount = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_SKIP_OBJECTS_COUNT));
+			skipObjectsSize = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_SKIP_OBJECTS_SIZE));
+			startTime = info.get(DBManager.JOB_TABLE_COLUMN_START);
+			endTime = info.get(DBManager.JOB_TABLE_COLUMN_END);
+			errorDesc = info.get(DBManager.JOB_TABLE_COLUMN_ERROR_DESC);
 	
 			if (jobState == STATE_REMOVE) {
 				continue;
@@ -289,14 +284,14 @@ public class Main {
 				break;
 				
 			case STATE_ERROR:
-				System.out.println(JOB_IS + String.format(FORMAT_START_END, jobId, "ERROR", startTime, endTime));
+				System.out.println(JOB_IS + String.format(FORMAT_START, jobId, "ERROR", startTime));
 				break;
 				
 			default:
 				break;
 			}
 			
-			if (Main.NAS.compareToIgnoreCase(jobType) == 0) {
+			if (Repository.IFS_FILE.compareToIgnoreCase(jobType) == 0) {
 				System.out.println("File : " + String.format("%s -> Object : %s", sourcePoint, targetPoint));
 			} else {
 				System.out.println("Object : " + String.format("%s -> Object : %s", sourcePoint, targetPoint));
@@ -304,6 +299,7 @@ public class Main {
 			
 			if (jobState == STATE_ERROR) {
 				System.out.println("Error : " + errorDesc);
+				System.out.println();
 				continue;
 			}
 	
