@@ -276,7 +276,7 @@ public class Swift implements Repository {
     }
 
     @Override
-    public boolean getVersioning() {
+    public boolean isVersioning() {
         return false;
     }
 
@@ -638,5 +638,11 @@ public class Swift implements Repository {
         }
         
         return data;
+    }
+
+    @Override
+    public String getVersioningStatus() {
+        // TODO Auto-generated method stub
+        return null;
     }
 }

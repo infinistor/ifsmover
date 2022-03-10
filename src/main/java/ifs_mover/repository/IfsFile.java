@@ -204,7 +204,7 @@ public class IfsFile implements Repository {
     }
 
     @Override
-    public boolean getVersioning() {
+    public boolean isVersioning() {
         return false;
     }
 
@@ -264,6 +264,12 @@ public class IfsFile implements Repository {
 
     @Override
     public ObjectData getObject(String bucket, String key, String versionId, long start, long end) {
+        return null;
+    }
+
+    @Override
+    public String getVersioningStatus() {
+        // TODO Auto-generated method stub
         return null;
     }
 }

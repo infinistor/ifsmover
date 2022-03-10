@@ -65,6 +65,7 @@ public class IfsS3 implements Repository, S3 {
     private boolean isAWS;
     private boolean isSecure;
 	private boolean isVersioning;
+	private String versioningStatus;
     private AmazonS3 client;
 	private String errCode;
 	private String errMessage;
@@ -417,9 +418,10 @@ public class IfsS3 implements Repository, S3 {
     }
 
 	@Override
-	public boolean getVersioning() {
+	public boolean isVersioning() {
 		try {
 			versionConfig = client.getBucketVersioningConfiguration(config.getBucket());
+			versioningStatus = versionConfig.getStatus();
 			if (versionConfig.getStatus().equals(BucketVersioningConfiguration.OFF)) {
 				isVersioning = false;
 			} else {
@@ -726,8 +728,16 @@ public class IfsS3 implements Repository, S3 {
     }
 
 	@Override
-	public void setBucketVersioning(String bucket, String status) {
-				
+	public void setBucketVersioning(String status) {
+		if (status == null) {
+			return;
+		}
+
+		if (status.equals(BucketVersioningConfiguration.SUSPENDED)) {
+			client.setBucketVersioningConfiguration(new SetBucketVersioningConfigurationRequest(config.getBucket(), 
+				new BucketVersioningConfiguration(BucketVersioningConfiguration.SUSPENDED)));
+			logger.info("set target bucket({}) versioning is Suspended", config.getBucket());
+		}
 	}
 
 	@Override
@@ -827,5 +837,15 @@ public class IfsS3 implements Repository, S3 {
 		} else {
 			client.deleteObject(bucket, key);
 		}
+	}
+
+	@Override
+	public String getVersioningStatus() {
+		if (versioningStatus == null) {
+			versionConfig = client.getBucketVersioningConfiguration(config.getBucket());
+			versioningStatus = versionConfig.getStatus();
+		}
+
+		return versioningStatus;
 	}
 }

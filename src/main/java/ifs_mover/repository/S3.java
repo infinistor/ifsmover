@@ -18,7 +18,7 @@ import com.amazonaws.services.s3.model.Tag;
 
 public interface S3 {
     void setVersioning();
-    void setBucketVersioning(String bucket, String status);
+    void setBucketVersioning(String status);
     String startMultipart(String bucket, String key);
     String uploadPart(String bucket, String key, String uploadId, InputStream is, int partNumber, long partSize);
     String completeMultipart(String bucket, String key, String uploadId, List<PartETag> list);

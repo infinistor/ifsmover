@@ -45,7 +45,8 @@ public interface Repository {
     void setConfig(Config config, boolean isSource);
     int check(String type);
     int init(String type);
-    boolean getVersioning();
+    boolean isVersioning();
+    String getVersioningStatus();
     
     List<String> getBucketList();
     boolean createBuckets(List<String> list);

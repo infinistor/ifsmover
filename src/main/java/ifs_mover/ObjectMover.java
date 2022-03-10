@@ -32,6 +32,7 @@ import ifs_mover.repository.RepositoryFactory;
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.SdkClientException;
+import com.amazonaws.services.s3.model.BucketVersioningConfiguration;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.Tag;
@@ -144,7 +145,8 @@ public class ObjectMover {
 		}
 
 		// check source bucket versioning
-		if (sourceRepository.getVersioning()) {
+		if (sourceRepository.isVersioning()) {
+			isVersioning = true;
 			targetRepository.setVersioning();
 		}
 
@@ -281,12 +283,10 @@ public class ObjectMover {
 						long size = failedJob.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_SIZE).longValue();
 						DBManager.updateJobFailedInfo(jobId, size);
 					}
-	
+
 					if (isVersioning) {
 						try {
-							if (sourceRepository.getVersioning()) {
-								targetRepository.setVersioning();
-							}
+							targetRepository.setBucketVersioning(sourceRepository.getVersioningStatus());
 						} catch (AmazonServiceException ase) {
 							logger.warn("{} {}", ase.getErrorCode(), ase.getErrorMessage());
 						} catch (SdkClientException  ace) {
