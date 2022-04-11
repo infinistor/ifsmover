@@ -77,7 +77,25 @@ public class IfsS3 implements Repository, S3 {
 	private final String BUCKET_ALREADY_EXISTS = "BucketAlreadyExists";
 	private final String INVALID_ACCESS_KEY_ID = "InvalidAccessKeyId";
 	private final String SIGNATURE_DOES_NOT_MATCH = "SignatureDoesNotMatch";
-	
+
+	private final int MILLISECONDS = 1000;
+	private final int TIMEOUT = 300;
+	private final int RETRY_COUNT = 2;
+
+	private final String LOG_SOURCE_INVALID_ACCESS = "source - The access key is invalid.";
+	private final String LOG_SOURCE_INVALID_SECRET = "source - The secret key is invalid.";
+	private final String LOG_TARGET_INVALID_ACCESS = "target - The access key is invalid.";
+	private final String LOG_TARGET_INVALID_SECRET = "target - The secret key is invalid.";
+	private final String LOG_SOURCE_ENDPOINT_NULL = "source - endpoint is null";
+	private final String LOG_TARGET_ENDPOINT_NULL = "target - endpoint is null";
+	private final String LOG_SOURCE_BUCKET_NULL = "source - bucket is null";
+	private final String LOG_TARGET_BUCKET_NULL = "target - bucket is null";
+	private final String LOG_SOURCE_BUCKET_NOT_EXIST = "source - bucket is not exist";
+	private final String LOG_SOURCE_NOT_REGION = "source - unable to find region.";
+	private final String LOG_TARGET_NOT_REGION = "target - unable to find region.";
+	private final String LOG_SOURCE_INVALID_ENDPOINT = "source - endpoint is invalid.";
+	private final String LOG_TARGET_INVALID_ENDPOINT = "target - endpoint is invalid.";
+
 	IfsS3(String jobId) {
 		this.jobId = jobId;
 	}
@@ -94,11 +112,11 @@ public class IfsS3 implements Repository, S3 {
     public int check(String type) {
 		if (config.getEndPoint() == null || config.getEndPoint().isEmpty()) {
 			if (isSource) {
-				logger.error("source - endpoint is null");
-				errMessage = "source - endpoint is null";
+				logger.error(LOG_SOURCE_ENDPOINT_NULL);
+				errMessage = LOG_SOURCE_ENDPOINT_NULL;
 			} else {
-				logger.error("target - endpoint is null");
-				errMessage = "target - endpoint is null";
+				logger.error(LOG_TARGET_ENDPOINT_NULL);
+				errMessage = LOG_TARGET_ENDPOINT_NULL;
 			}
 			return ENDPOINT_IS_NULL;
 		}
@@ -106,11 +124,11 @@ public class IfsS3 implements Repository, S3 {
 		if (!type.equalsIgnoreCase(Repository.SWIFT)) {
 			if (config.getBucket() == null || config.getBucket().isEmpty()) {
 				if (isSource) {
-					logger.error("source - bucket is null");
-					errMessage = "source - bucket is null";
+					logger.error(LOG_SOURCE_BUCKET_NULL);
+					errMessage = LOG_SOURCE_BUCKET_NULL;
 				} else {
-					logger.error("target - bucket is null");
-					errMessage = "target - bucket is null";
+					logger.error(LOG_TARGET_BUCKET_NULL);
+					errMessage = LOG_TARGET_BUCKET_NULL;
 				}
 				return BUCKET_IS_NULL;
 			}
@@ -134,8 +152,8 @@ public class IfsS3 implements Repository, S3 {
 		result = existBucket(true, config.getBucket());
 		if (result == BUCKET_NO_EXIST) {
 			if (isSource) {
-				logger.error("source - bucket is not exist");
-				errMessage = "source - bucket is not exist";
+				logger.error(LOG_SOURCE_BUCKET_NOT_EXIST);
+				errMessage = LOG_SOURCE_BUCKET_NOT_EXIST;
 				return BUCKET_NO_EXIST;
 			} else {
 				result = createBucket(true);
@@ -155,21 +173,21 @@ public class IfsS3 implements Repository, S3 {
 			client = createClient(isAWS, isSecure, config.getEndPoint(), config.getAccessKey(), config.getSecretKey());
 		} catch (SdkClientException e) {
 			if (isSource) {
-				logger.error("source - unable to find region.");
-				errMessage = "source - unable to find region";
+				logger.error(LOG_SOURCE_NOT_REGION);
+				errMessage = LOG_SOURCE_NOT_REGION;
 			} else {
-				logger.error("target - unable to find region.");
-				errMessage = "target - unable to find region";
+				logger.error(LOG_TARGET_NOT_REGION);
+				errMessage = LOG_TARGET_NOT_REGION;
 			}
 			
             return UNABLE_FIND_REGION;
 		} catch (IllegalArgumentException e) {
 			if (isSource) {
-				logger.error("source - endpoint is invalid.");
-				errMessage = "source - endpoint is invalid.";
+				logger.error(LOG_SOURCE_INVALID_ENDPOINT);
+				errMessage = LOG_SOURCE_INVALID_ENDPOINT;
 			} else {
-				logger.error("target - endpoint is invalid.");
-				errMessage = "target - endpoint is invalid.";
+				logger.error(LOG_TARGET_INVALID_ENDPOINT);
+				errMessage = LOG_TARGET_INVALID_ENDPOINT;
 			}
             return INVALID_ENDPOINT;
 		}
@@ -187,6 +205,9 @@ public class IfsS3 implements Repository, S3 {
 		}
 
 		config.setSignerOverride(AWS_S3_V4_SIGNER_TYPE);
+		config.setMaxErrorRetry(RETRY_COUNT);
+		config.setConnectionTimeout(TIMEOUT * MILLISECONDS);
+		config.setSocketTimeout(TIMEOUT * MILLISECONDS);
 		AmazonS3ClientBuilder clientBuilder = AmazonS3ClientBuilder.standard();
 
 		clientBuilder.setCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(AccessKey, SecretKey)));
@@ -217,19 +238,19 @@ public class IfsS3 implements Repository, S3 {
 			case INVALID_ACCESS_KEY_ID:
 				if (isCheck) {
 					if (isSource) {
-						logger.error("source - The access key is invalid.");
-						errMessage = "source - The access key is invalid.";
+						logger.error(LOG_SOURCE_INVALID_ACCESS);
+						errMessage = LOG_SOURCE_INVALID_ACCESS;
 					} else {
-						logger.error("target - The access key is invalid.");
-						errMessage = "target - The access key is invalid.";
+						logger.error(LOG_TARGET_INVALID_ACCESS);
+						errMessage = LOG_TARGET_INVALID_ACCESS;
 					}
 				} else {
 					if (isSource) {
-						logger.error("source - The access key is invalid.");
-						errMessage = "source - The access key is invalid.";
+						logger.error(LOG_SOURCE_INVALID_ACCESS);
+						errMessage = LOG_SOURCE_INVALID_ACCESS;
 					} else {
-						logger.error("target - The access key is invalid.");
-						errMessage = "target - The access key is invalid.";
+						logger.error(LOG_TARGET_INVALID_ACCESS);
+						errMessage = LOG_TARGET_INVALID_ACCESS;
 					}
 				}
 				result = INVALID_ACCESS_KEY;
@@ -238,19 +259,19 @@ public class IfsS3 implements Repository, S3 {
 			case SIGNATURE_DOES_NOT_MATCH:
 				if (isCheck) {
 					if (isSource) {
-						logger.error("source - The secret key is invalid.");
-						errMessage = "source - The secret key is invalid.";
+						logger.error(LOG_SOURCE_INVALID_SECRET);
+						errMessage = LOG_SOURCE_INVALID_SECRET;
 					} else {
-						logger.error("target - The secret key is invalid.");
-						errMessage = "target The secret key is invalid.";
+						logger.error(LOG_TARGET_INVALID_SECRET);
+						errMessage = LOG_TARGET_INVALID_SECRET;
 					}
 				} else {
 					if (isSource) {
-						logger.error("source - The secret key is invalid.");
-						errMessage = "source - The secret key is invalid.";
+						logger.error(LOG_SOURCE_INVALID_SECRET);
+						errMessage = LOG_SOURCE_INVALID_SECRET;
 					} else {
-						logger.error("target - The secret key is invalid.");
-						errMessage = "target - The secret key is invalid.";
+						logger.error(LOG_TARGET_INVALID_SECRET);
+						errMessage = LOG_TARGET_INVALID_SECRET;
 					}
 				}
 				result = INVALID_SECRET_KEY;
@@ -291,19 +312,19 @@ public class IfsS3 implements Repository, S3 {
 			case INVALID_ACCESS_KEY_ID:
 				if (isCheck) {
 					if (isSource) {
-						logger.error("source - The access key is invalid.");
-						errMessage = "source - The access key is invalid.";
+						logger.error(LOG_SOURCE_INVALID_ACCESS);
+						errMessage = LOG_SOURCE_INVALID_ACCESS;
 					} else {
-						logger.error("target - The access key is invalid.");
-						errMessage = "target - The access key is invalid.";
+						logger.error(LOG_TARGET_INVALID_ACCESS);
+						errMessage = LOG_TARGET_INVALID_ACCESS;
 					}
 				} else {
 					if (isSource) {
-						logger.error("source - The access key is invalid.");
-						errMessage = "source - The access key is invalid.";
+						logger.error(LOG_SOURCE_INVALID_ACCESS);
+						errMessage = LOG_SOURCE_INVALID_ACCESS;
 					} else {
-						logger.error("target - The access key is invalid.");
-						errMessage = "target - The access key is invalid.";
+						logger.error(LOG_TARGET_INVALID_ACCESS);
+						errMessage = LOG_TARGET_INVALID_ACCESS;
 					}
 				}
 				return INVALID_ACCESS_KEY;
@@ -311,19 +332,19 @@ public class IfsS3 implements Repository, S3 {
 			case SIGNATURE_DOES_NOT_MATCH:
 				if (isCheck) {
 					if (isSource) {
-						logger.error("source - The secret key is invalid.");
-						errMessage = "source - The secret key is invalid.";
+						logger.error(LOG_SOURCE_INVALID_SECRET);
+						errMessage = LOG_SOURCE_INVALID_SECRET;
 					} else {
-						logger.error("target - The secret key is invalid.");
-						errMessage = "target The secret key is invalid.";
+						logger.error(LOG_TARGET_INVALID_SECRET);
+						errMessage = LOG_TARGET_INVALID_SECRET;
 					}
 				} else {
 					if (isSource) {
-						logger.error("source - The secret key is invalid.");
-						errMessage = "source - The secret key is invalid.";
+						logger.error(LOG_SOURCE_INVALID_SECRET);
+						errMessage = LOG_SOURCE_INVALID_SECRET;
 					} else {
-						logger.error("target - The secret key is invalid.");
-						errMessage = "target - The secret key is invalid.";
+						logger.error(LOG_TARGET_INVALID_SECRET);
+						errMessage = LOG_TARGET_INVALID_SECRET;
 					}
 				}
 				return INVALID_SECRET_KEY;
@@ -356,11 +377,11 @@ public class IfsS3 implements Repository, S3 {
     public int init(String type) {
 		if (config.getEndPoint() == null || config.getEndPoint().isEmpty()) {
 			if (isSource) {
-				logger.error("source - endpoint is null");
-				errMessage = "source - endpoint is null";
+				logger.error(LOG_SOURCE_ENDPOINT_NULL);
+				errMessage = LOG_SOURCE_ENDPOINT_NULL;
 			} else {
-				logger.error("target - endpoint is null");
-				errMessage = "target - endpoint is null";
+				logger.error(LOG_TARGET_ENDPOINT_NULL);
+				errMessage = LOG_TARGET_ENDPOINT_NULL;
 			}
 			DBManager.insertErrorJob(jobId, errMessage);
 			return ENDPOINT_IS_NULL;
@@ -369,11 +390,11 @@ public class IfsS3 implements Repository, S3 {
 		if (!type.equalsIgnoreCase(Repository.SWIFT)) {
 			if (config.getBucket() == null || config.getBucket().isEmpty()) {
 				if (isSource) {
-					logger.error("source - bucket is null");
-					errMessage = "source - bucket is null";
+					logger.error(LOG_SOURCE_BUCKET_NULL);
+					errMessage = LOG_SOURCE_BUCKET_NULL;
 				} else {
-					logger.error("target - bucket is null");
-					errMessage = "target - bucket is null";
+					logger.error(LOG_TARGET_BUCKET_NULL);
+					errMessage = LOG_TARGET_BUCKET_NULL;
 				}
 				DBManager.insertErrorJob(jobId, errMessage);
 				return BUCKET_IS_NULL;
@@ -399,8 +420,8 @@ public class IfsS3 implements Repository, S3 {
 		result = existBucket(true, config.getBucket());
 		if (result == BUCKET_NO_EXIST) {
 			if (isSource) {
-				logger.error("source - bucket is not exist");
-				errMessage = "source - bucket is not exist";
+				logger.error(LOG_SOURCE_BUCKET_NOT_EXIST);
+				errMessage = LOG_SOURCE_BUCKET_NOT_EXIST;
 				return BUCKET_NO_EXIST;
 			} else {
 				result = createBucket(false);
@@ -782,8 +803,8 @@ public class IfsS3 implements Repository, S3 {
 	}
 
 	@Override
-	public String startMultipart(String bucket, String key) {
-		InitiateMultipartUploadResult initMultipart = client.initiateMultipartUpload(new InitiateMultipartUploadRequest(bucket, key));
+	public String startMultipart(String bucket, String key, ObjectMetadata objectMetadata) {
+		InitiateMultipartUploadResult initMultipart = client.initiateMultipartUpload(new InitiateMultipartUploadRequest(bucket, key, objectMetadata));
 		return initMultipart.getUploadId();
 	}
 
@@ -818,7 +839,7 @@ public class IfsS3 implements Repository, S3 {
 				}
 				putObjectRequest = new PutObjectRequest(bucket, key, data.getInputStream(), data.getMetadata());
 			}
-			putObjectRequest.getRequestClientOptions().setReadLimit(1024 * 1024 * 1024);
+			// putObjectRequest.getRequestClientOptions().setReadLimit(512 * 1024 * 1024);
 			return client.putObject(putObjectRequest).getETag();
 		} else {
 			ObjectMetadata meta = new ObjectMetadata();

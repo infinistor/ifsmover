@@ -13,13 +13,14 @@ package ifs_mover.repository;
 import java.io.InputStream;
 import java.util.List;
 
+import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.Tag;
 
 public interface S3 {
     void setVersioning();
     void setBucketVersioning(String status);
-    String startMultipart(String bucket, String key);
+    String startMultipart(String bucket, String key, ObjectMetadata objectMetadata);
     String uploadPart(String bucket, String key, String uploadId, InputStream is, int partNumber, long partSize);
     String completeMultipart(String bucket, String key, String uploadId, List<PartETag> list);
     void setTagging(String bucket, String key, List<Tag> tagSet);

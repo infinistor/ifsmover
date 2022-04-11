@@ -12,6 +12,9 @@
 package ifs_mover;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -472,13 +475,13 @@ public class ObjectMover {
 
 			try {
 				if (isDelete) {
-					targetRepository.deleteObject(targetBucket, targetPath, versionId);
+					targetRepository.deleteObject(targetBucket, targetPath, null);
 					logger.info("delete success : {}", sourcePath);
 				} else {
 					if (isFile) {
 						if (multipartInfo != null) {
 							// for swift large file (more than 5G)
-							String uploadId = targetRepository.startMultipart(targetBucket, targetPath);
+							String uploadId = targetRepository.startMultipart(targetBucket, targetPath, null);
 							List<PartETag> partList = new ArrayList<PartETag>();
 							String[] multiPath = multipartInfo.split("/", 2);
 							int partNumber = 0;
@@ -499,30 +502,39 @@ public class ObjectMover {
 								targetRepository.setTagging(targetBucket, targetPath, tagSet);
 							}
 							logger.info("move success : {}", path);
-						} else if ((!type.equalsIgnoreCase(Repository.IFS_FILE) && moveSize != 0 && size > moveSize)
-									|| (type.equalsIgnoreCase(Repository.SWIFT) && size > GIGA_BYTES)) {
+						} else if ((!type.equalsIgnoreCase(Repository.IFS_FILE) && size > GIGA_BYTES)
+									|| (!type.equalsIgnoreCase(Repository.IFS_FILE) && (moveSize != 0 && size > moveSize))) {
 							// send multipart
+							if (versionId != null && !versionId.isEmpty()) {
+								logger.debug("send multipart : {}:{}, size {}", path, versionId, size);
+							} else {
+								logger.debug("send multipart : {}, size {}", path, size);
+							}
 							long limitSize = 0L;
 							if (moveSize == 0) {
 								limitSize = 100 * MEGA_BYTES;
 							} else {
 								limitSize = moveSize;
 							}
-							String uploadId = targetRepository.startMultipart(targetBucket, targetPath);
+							ObjectData objData = sourceRepository.getObject(sourceBucket, sourcePath, versionId);
+							String uploadId = targetRepository.startMultipart(targetBucket, targetPath, objData.getMetadata());
 							List<PartETag> partList = new ArrayList<PartETag>();
 							int partNumber = 1;
-							ObjectData data = null;
+
 							for (long i = 0; i < size; i += limitSize, partNumber++) {
 								long start = i;
 								long end = i + limitSize - 1;
 								if (end >= size) {
 									end = size - 1;
 								}
-								data = sourceRepository.getObject(sourceBucket, sourcePath, null, start, end);
+
+								ObjectData data = sourceRepository.getObject(sourceBucket, sourcePath, versionId, start, end);
+
 								if (data != null) {
 									String partETag = targetRepository.uploadPart(targetBucket, targetPath, uploadId, data.getInputStream(), partNumber, data.getSize());
 									partList.add(new PartETag(partNumber, partETag));
 									data.getInputStream().close();
+									logger.debug("{} - move part : {}, size : {}", path, partNumber, data.getSize());
 								}
 							}
 							targetRepository.completeMultipart(targetBucket, targetPath, uploadId, partList);
@@ -557,7 +569,7 @@ public class ObjectMover {
 							}
 
 							if (!type.equalsIgnoreCase(Repository.IFS_FILE) && isFile && size > 0) {
-								if (etag.equals(s3ETag)) {
+								if (etag.equals(s3ETag) || etag.contains("-")) {
 									if (versionId != null && !versionId.isEmpty()) {
 										logger.info("move success : {}:{}", path, versionId);
 									} else {
