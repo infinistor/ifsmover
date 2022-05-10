@@ -448,7 +448,7 @@ public class ObjectMover {
 				sourceBucket = sourceConfig.getBucket();
 				sourcePath = sourceRepository.setPrefix(path);
 				targetBucket = targetConfig.getBucket();
-				targetPath = targetRepository.setTargetPrefix(sourceRepository.setTargetPrefix(path));
+				targetPath = targetRepository.setTargetPrefix(path);
 				if (!isFile && !targetPath.endsWith("/")) {
 					targetPath += "/";
 				}
