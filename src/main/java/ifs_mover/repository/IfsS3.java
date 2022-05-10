@@ -771,8 +771,8 @@ public class IfsS3 implements Repository, S3 {
 		ObjectData data = new ObjectData();
 		GetObjectRequest getObjectRequest = null;
 		S3Object s3Data = null;
-
-		if (versionId == null) {
+		
+		if (versionId == null || versionId.equalsIgnoreCase("null")) {
 			getObjectRequest = new GetObjectRequest(bucket, key);
 		} else {
 			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId);

@@ -583,14 +583,24 @@ public class ObjectMover {
 								logger.info("move success : {}", path);
 							}
 						}
-					} else {
-						ObjectMetadata meta = new ObjectMetadata();
-						meta.setContentLength(0);
-						InputStream is = new ByteArrayInputStream(new byte[0]);
-						ObjectData data = new ObjectData(meta, is);
+					} else {	// move dir
+						ObjectData data;
+						if (type.equalsIgnoreCase(Repository.IFS_FILE)) {
+							ObjectMetadata meta = new ObjectMetadata();
+							meta.setContentLength(0);
+							InputStream is = new ByteArrayInputStream(new byte[0]);
+							data = new ObjectData(meta, is);
+							targetRepository.putObject(isFile, targetBucket, targetPath, data, 0L);
+							is.close();
+						} else {
+							data = sourceRepository.getObject(sourceBucket, sourcePath, versionId);
+							if (data == null) {
+								logger.warn("not found : {} {}", sourceBucket, sourcePath);
+								return false;
+							}
+							targetRepository.putObject(isFile, targetBucket, targetPath, data, 0L);
+						}
 
-						targetRepository.putObject(isFile, targetBucket, targetPath, data, 0L);
-						is.close();
 						if (versionId != null && !versionId.isEmpty()) {
 							logger.info("move success : {}:{}", path, versionId);
 						} else {
