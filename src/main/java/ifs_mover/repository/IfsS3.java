@@ -827,28 +827,18 @@ public class IfsS3 implements Repository, S3 {
 
 	@Override
 	public String putObject(boolean isFile, String bucket, String key, ObjectData data, long size) {
-		if (isFile && size > 0) {
-			PutObjectRequest putObjectRequest = null;
-			if (data.getFile() != null) {
-				putObjectRequest = new PutObjectRequest(bucket, key, data.getFile());
-			} else {
-				if (data.getMetadata() == null) {
-					ObjectMetadata meta = new ObjectMetadata();
-					meta.setContentLength(data.getSize());
-					data.setMetadata(meta);
-				}
-				putObjectRequest = new PutObjectRequest(bucket, key, data.getInputStream(), data.getMetadata());
-			}
-			// putObjectRequest.getRequestClientOptions().setReadLimit(512 * 1024 * 1024);
-			return client.putObject(putObjectRequest).getETag();
+		PutObjectRequest putObjectRequest = null;
+		if (data.getFile() != null) {
+			putObjectRequest = new PutObjectRequest(bucket, key, data.getFile());
 		} else {
-			ObjectMetadata meta = new ObjectMetadata();
-			meta.setContentLength(0L);
-			InputStream is = new ByteArrayInputStream(new byte[0]);
-			PutObjectRequest req = new PutObjectRequest(bucket, key, is, meta);
-			client.putObject(req);
-			return null;
+			if (data.getMetadata() == null) {
+				ObjectMetadata meta = new ObjectMetadata();
+				meta.setContentLength(data.getSize());
+				data.setMetadata(meta);
+			}
+			putObjectRequest = new PutObjectRequest(bucket, key, data.getInputStream(), data.getMetadata());
 		}
+		return client.putObject(putObjectRequest).getETag();
 	}
 
 	@Override
