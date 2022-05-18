@@ -353,7 +353,11 @@ public class IfsS3 implements Repository, S3 {
 			logger.error("{}", ase.getMessage());
 			errMessage = ase.getMessage();
 			return FAILED_CREATE_BUCKET;
-        }
+        } catch (IllegalArgumentException e) {
+			logger.error(e.getMessage());
+			errMessage = e.getMessage();
+			return FAILED_CREATE_BUCKET;
+		}
 	}
 
 	private boolean createBucket(String bucket) {
