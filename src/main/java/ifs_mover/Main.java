@@ -11,6 +11,8 @@
 
 package ifs_mover;
 
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
@@ -25,6 +27,7 @@ import ifs_mover.repository.Repository;
 
 public class Main {
 	private static final Logger logger = LoggerFactory.getLogger(Main.class);
+	private static final String JOBID_PATH = "./.jobId";
 	private static final int THREAD_COUNT = 5;
 	
 	private static final long UNIT_G = (1024 * 1024 * 1024);
@@ -97,6 +100,7 @@ public class Main {
 			DBManager.createJobTable();
 			DBManager.createJob(pid, options.getType(), options.getSourceConfig(), options.getTargetConfig());
 			jobId = DBManager.getJobId(pid);
+			writeJobID(jobId);
 			DBManager.createMoveObjectTable(jobId);
 			DBManager.createMoveObjectTableIndex(jobId);
 			
@@ -478,6 +482,22 @@ public class Main {
 			} 
 			System.out.println();
 		}
+	}
+
+	private static void writeJobID(String jobID) {
+		File file = new File(JOBID_PATH);
+        try {
+            if (!file.exists()) {
+                file.createNewFile();
+            }
+            FileWriter fw = new FileWriter(file);
+            fw.write(jobID);
+            fw.flush();
+            fw.close();
+        } catch (IOException e) {
+            logger.error(e.getMessage());
+            System.exit(-1);
+        }
 	}
 }
 
