@@ -508,12 +508,13 @@ python ifs_mover -t=file -source=source.conf -target=target.conf -thread=4
 # mkdir /usr/local/pspace
 # mkdir /usr/local/pspace/bin
 # cd /usr/local/pspace/bin
-# wget "https://github.com/infinistor/ifsmover/releases/download/v0.x.x/IfsMover-0.x.x.tar.gz"
-# tar -xvf IfsMover-0.x.x.tar.gz
+# wget "https://github.com/infinistor/ifsmover/releases/download/v0.x.x/ifsmover-0.x.x.tar.gz"
+# tar -xvf ifsmover-0.x.x.tar.gz
+# mv ifsmover-0.x.x ifsmover
 ```
 
 * 설치 경로로 이동합니다. <br>
-<kbd> cd /usr/local/pspace/bin/IfsMover </kbd>
+<kbd> cd /usr/local/pspace/bin/ifsmover </kbd>
 
 * source.conf, target.conf에 이관 작업의 설정 정보를 입력합니다.
 
