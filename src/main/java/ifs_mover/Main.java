@@ -100,7 +100,7 @@ public class Main {
 			DBManager.createJobTable();
 			DBManager.createJob(pid, options.getType(), options.getSourceConfig(), options.getTargetConfig());
 			jobId = DBManager.getJobId(pid);
-			writeJobID(jobId);
+			writeJobID(jobId, options.getSourceConfPath());
 			DBManager.createMoveObjectTable(jobId);
 			DBManager.createMoveObjectTableIndex(jobId);
 			
@@ -113,7 +113,6 @@ public class Main {
 					.type(options.getType())
 					.isRerun(false)
 					.build();
-
 			objectMover.init();
 			DBManager.updateJobState(jobId, type);
 			
@@ -484,8 +483,13 @@ public class Main {
 		}
 	}
 
-	private static void writeJobID(String jobID) {
-		File file = new File(JOBID_PATH);
+	private static void writeJobID(String jobID, String path) {
+		if (path.length() < 20) {
+			return;
+		}
+
+		String uuid = path.substring(7);
+		File file = new File(JOBID_PATH + uuid);
         try {
             if (!file.exists()) {
                 file.createNewFile();

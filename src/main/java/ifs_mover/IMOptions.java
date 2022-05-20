@@ -459,4 +459,8 @@ public class IMOptions {
 	public String getRerunId() {
 		return rerunId;
 	}
+
+	public String getSourceConfPath() {
+		return sourceConfPath;
+	}
 }
