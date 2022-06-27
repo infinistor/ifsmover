@@ -132,5 +132,15 @@
 			<artifactId>json-simple</artifactId>
 			<version>1.1.1</version>
 		</dependency>
+    <dependency>
+       <groupId>org.mariadb.jdbc</groupId>
+       <artifactId>mariadb-java-client</artifactId>
+       <version>3.0.4</version>
+    </dependency>
+    <dependency>
+			<groupId>com.zaxxer</groupId>
+			<artifactId>HikariCP</artifactId>
+			<version>3.4.5</version>
+		</dependency>
   </dependencies>
 </project>

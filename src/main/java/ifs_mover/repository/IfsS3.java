@@ -10,10 +10,16 @@
 */
 package ifs_mover.repository;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import org.json.simple.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
@@ -27,6 +33,7 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.BucketVersioningConfiguration;
 import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
+import com.amazonaws.services.s3.model.GetObjectMetadataRequest;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.GetObjectTaggingRequest;
 import com.amazonaws.services.s3.model.GetObjectTaggingResult;
@@ -49,13 +56,9 @@ import com.amazonaws.services.s3.model.UploadPartRequest;
 import com.amazonaws.services.s3.model.UploadPartResult;
 import com.amazonaws.services.s3.model.VersionListing;
 
-import org.json.simple.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import ifs_mover.Config;
-import ifs_mover.DBManager;
 import ifs_mover.Utils;
+import ifs_mover.db.MariaDB;
 
 public class IfsS3 implements Repository, S3 {
 	private static final Logger logger = LoggerFactory.getLogger(IfsS3.class);
@@ -70,6 +73,7 @@ public class IfsS3 implements Repository, S3 {
 	private String errCode;
 	private String errMessage;
 	private BucketVersioningConfiguration versionConfig;
+	private boolean targetVersioning;
 
 	private final String HTTPS = "https";
 	private final String AWS_S3_V4_SIGNER_TYPE = "AWSS3V4SignerType";
@@ -77,6 +81,7 @@ public class IfsS3 implements Repository, S3 {
 	private final String BUCKET_ALREADY_EXISTS = "BucketAlreadyExists";
 	private final String INVALID_ACCESS_KEY_ID = "InvalidAccessKeyId";
 	private final String SIGNATURE_DOES_NOT_MATCH = "SignatureDoesNotMatch";
+	private final String ACCESS_DENIED = "AccessDenied";
 
 	private final int MILLISECONDS = 1000;
 	private final int TIMEOUT = 300;
@@ -95,6 +100,8 @@ public class IfsS3 implements Repository, S3 {
 	private final String LOG_TARGET_NOT_REGION = "target - unable to find region.";
 	private final String LOG_SOURCE_INVALID_ENDPOINT = "source - endpoint is invalid.";
 	private final String LOG_TARGET_INVALID_ENDPOINT = "target - endpoint is invalid.";
+	private final String LOG_SOURCE_ACCESS_DENIED = "source - Bucket exists, but does not have access.";
+	private final String LOG_TARGET_ACCESS_DENIED = "target - Bucket exists, but does not have access.";
 
 	IfsS3(String jobId) {
 		this.jobId = jobId;
@@ -228,6 +235,8 @@ public class IfsS3 implements Repository, S3 {
 		int result = 0;
 		try {
 			if (client.doesBucketExistV2(bucket)) {
+				ListObjectsRequest request = new ListObjectsRequest().withBucketName(bucket).withMaxKeys(10);
+				ObjectListing list = client.listObjects(request);
 				result = NO_ERROR;
 			} else {
 				result = BUCKET_NO_EXIST;
@@ -236,45 +245,47 @@ public class IfsS3 implements Repository, S3 {
 			errCode = ase.getErrorCode();
 			switch (errCode) {
 			case INVALID_ACCESS_KEY_ID:
-				if (isCheck) {
-					if (isSource) {
-						logger.error(LOG_SOURCE_INVALID_ACCESS);
-						errMessage = LOG_SOURCE_INVALID_ACCESS;
-					} else {
-						logger.error(LOG_TARGET_INVALID_ACCESS);
-						errMessage = LOG_TARGET_INVALID_ACCESS;
-					}
+				if (isSource) {
+					logger.error(LOG_SOURCE_INVALID_ACCESS);
+					errMessage = LOG_SOURCE_INVALID_ACCESS;
 				} else {
-					if (isSource) {
-						logger.error(LOG_SOURCE_INVALID_ACCESS);
-						errMessage = LOG_SOURCE_INVALID_ACCESS;
-					} else {
-						logger.error(LOG_TARGET_INVALID_ACCESS);
-						errMessage = LOG_TARGET_INVALID_ACCESS;
-					}
+					logger.error(LOG_TARGET_INVALID_ACCESS);
+					errMessage = LOG_TARGET_INVALID_ACCESS;
 				}
 				result = INVALID_ACCESS_KEY;
 				break;
 				
 			case SIGNATURE_DOES_NOT_MATCH:
-				if (isCheck) {
-					if (isSource) {
-						logger.error(LOG_SOURCE_INVALID_SECRET);
-						errMessage = LOG_SOURCE_INVALID_SECRET;
-					} else {
-						logger.error(LOG_TARGET_INVALID_SECRET);
-						errMessage = LOG_TARGET_INVALID_SECRET;
-					}
+				if (isSource) {
+					logger.error(LOG_SOURCE_INVALID_SECRET);
+					errMessage = LOG_SOURCE_INVALID_SECRET;
 				} else {
-					if (isSource) {
-						logger.error(LOG_SOURCE_INVALID_SECRET);
-						errMessage = LOG_SOURCE_INVALID_SECRET;
-					} else {
-						logger.error(LOG_TARGET_INVALID_SECRET);
-						errMessage = LOG_TARGET_INVALID_SECRET;
-					}
+					logger.error(LOG_TARGET_INVALID_SECRET);
+					errMessage = LOG_TARGET_INVALID_SECRET;
 				}
 				result = INVALID_SECRET_KEY;
+				break;
+
+			case ACCESS_DENIED:
+				if (isSource) {
+					logger.error(LOG_SOURCE_ACCESS_DENIED);
+					errMessage = LOG_SOURCE_ACCESS_DENIED;
+				} else {
+					logger.error(LOG_TARGET_ACCESS_DENIED);
+					errMessage = LOG_TARGET_ACCESS_DENIED;
+				}
+				result = ACCESS_DENIED_ERROR;
+				break;
+
+			default:
+				if (isSource) {
+					logger.error("source - " + errCode);
+					errMessage = "source - " + errCode;
+				} else {
+					logger.error("target - " + errCode);
+					errMessage = "target - " + errCode;
+				}
+				result = AMAZON_SERVICE_EXCEPTION;
 				break;
 			}
         } catch (AmazonClientException ace) {
@@ -387,7 +398,8 @@ public class IfsS3 implements Repository, S3 {
 				logger.error(LOG_TARGET_ENDPOINT_NULL);
 				errMessage = LOG_TARGET_ENDPOINT_NULL;
 			}
-			DBManager.insertErrorJob(jobId, errMessage);
+			// DBManager.insertErrorJob(jobId, errMessage);
+			Utils.getDBInstance().insertErrorJob(jobId, errMessage);
 			return ENDPOINT_IS_NULL;
 		}
 
@@ -400,7 +412,8 @@ public class IfsS3 implements Repository, S3 {
 					logger.error(LOG_TARGET_BUCKET_NULL);
 					errMessage = LOG_TARGET_BUCKET_NULL;
 				}
-				DBManager.insertErrorJob(jobId, errMessage);
+				// DBManager.insertErrorJob(jobId, errMessage);
+				Utils.getDBInstance().insertErrorJob(jobId, errMessage);
 				return BUCKET_IS_NULL;
 			}
 		}
@@ -417,7 +430,8 @@ public class IfsS3 implements Repository, S3 {
 
         int result = getClient();
 		if (result != NO_ERROR) {
-			DBManager.insertErrorJob(jobId, errMessage);
+			// DBManager.insertErrorJob(jobId, errMessage);
+			Utils.getDBInstance().insertErrorJob(jobId, errMessage);
 			return result;
 		}
 
@@ -435,7 +449,9 @@ public class IfsS3 implements Repository, S3 {
 				logger.info("create bucket {}", config.getBucket());
 			}
 		} else if (result != NO_ERROR) {
-			DBManager.insertErrorJob(jobId, errMessage);
+			// DBManager.insertErrorJob(jobId, errMessage);
+			logger.error("errMessage : {}", errMessage);
+			Utils.getDBInstance().insertErrorJob(jobId, errMessage);
 			return result;
 		}
 
@@ -484,7 +500,8 @@ public class IfsS3 implements Repository, S3 {
 	}
 
     @Override
-    public void makeObjectList(boolean isRerun) {
+    public void makeObjectList(boolean isRerun, boolean targetVersioning) {
+		this.targetVersioning = targetVersioning;
         if (isRerun) {
 			objectListRerun();
 		} else {
@@ -494,51 +511,10 @@ public class IfsS3 implements Repository, S3 {
 
 	private void objectList() {
 		long count = 0;
+		ExecutorService executor = Executors.newFixedThreadPool(1000);
+		
 		try {
-			if (isVersioning) {
-				ListVersionsRequest request = null;
-				if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
-					request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
-				} else {
-					request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix("");
-				}
-				VersionListing listing = null;
-				do {
-					listing = client.listVersions(request);
-					for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
-						count++;
-						String tagging = null;
-						if (!versionSummary.isDeleteMarker()) {
-							try {
-								GetObjectTaggingResult result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey(), versionSummary.getVersionId()));
-								if (result != null && !result.getTagSet().isEmpty()) {
-									JSONObject json = new JSONObject();
-									for (Tag tag: result.getTagSet()) {
-										json.put(tag.getKey(), tag.getValue());
-									}
-									tagging = json.toString();
-								}
-							} catch (AmazonServiceException ase) {
-								logger.warn("{}:{} : failed get tagging info - {}", versionSummary.getKey(), versionSummary.getVersionId(), ase.getErrorCode());
-							}
-						}
-						
-						Utils.insertMoveObjectVersion(jobId, versionSummary.getKey().charAt(versionSummary.getKey().length() - 1) != '/', 
-							versionSummary.getLastModified().toString(), 
-							versionSummary.getSize(), 
-							versionSummary.getKey(), 
-							versionSummary.getVersionId(), 
-							versionSummary.getETag(),
-							"",
-							tagging,
-							versionSummary.isDeleteMarker(), 
-							versionSummary.isLatest());
-						Utils.updateJobInfo(jobId, versionSummary.getSize());
-					}
-					request.setKeyMarker(listing.getNextKeyMarker());
-					request.setVersionIdMarker(listing.getNextVersionIdMarker());
-				} while (listing.isTruncated());
-			} else {
+			if (!targetVersioning) {
 				ListObjectsRequest request = null;
 				if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
 					request = new ListObjectsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
@@ -559,98 +535,140 @@ public class IfsS3 implements Repository, S3 {
 							}
 							tagging = json.toString();
 						}
-						
-						Utils.insertMoveObject(jobId, objectSummary.getKey().charAt(objectSummary.getKey().length() - 1) != '/', 
-							objectSummary.getLastModified().toString(), 
+
+						DBWorker dbworker = new DBWorker(false,
+							isVersioning, 
+							jobId, 
+							objectSummary.getKey().charAt(objectSummary.getKey().length() - 1) != '/', 
+							String.valueOf(objectSummary.getLastModified().getTime()), 
 							objectSummary.getSize(), 
 							objectSummary.getKey(),
 							objectSummary.getETag(),
 							tagging);
-						Utils.updateJobInfo(jobId, objectSummary.getSize());
+						executor.execute(dbworker);
 					}
+
 					request.setMarker(result.getNextMarker());
 				} while (result.isTruncated());
-			}
-		} catch (AmazonServiceException ase) {
-			Utils.logging(logger, ase);
-			logger.error("{} - {}", ase.getErrorCode(), ase.getMessage());
-			DBManager.insertErrorJob(jobId, ase.getErrorCode() + "," + ase.getErrorMessage());
-			System.exit(-1);
-        } catch (AmazonClientException ace) {
-			Utils.logging(logger, ace);
-        	logger.error("{}", ace.getMessage());
-        	DBManager.insertErrorJob(jobId, ace.getMessage());
-        	System.exit(-1);
-        }
-		
-		logger.info("listing size : {}", count);
-		
-		if (count == 0) {
-			logger.error("Doesn't havn an object.");
-			DBManager.insertErrorJob(jobId, "Doesn't havn an object.");
-			System.exit(-1);
-		}
-	}
+			} else {
+				if (isVersioning) {
+					ListVersionsRequest request = null;
+					if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
+						request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
+					} else {
+						request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix("");
+					}
+					VersionListing listing = null;
+					do {
+						listing = client.listVersions(request);
+						for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
+							count++;
+							String tagging = null;
+							boolean isFile = versionSummary.getKey().charAt(versionSummary.getKey().length() - 1) != '/';
 
-	private void objectListRerun() {
-		int state = 0;
-		try {
-			if (isVersioning) {
-				ListVersionsRequest request = null;
-				if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
-					request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
-				} else {
-					request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix("");
-				}
-
-				VersionListing listing = null;
-				do {
-					listing = client.listVersions(request);
-					for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
-						String tagging = null;
-						if (!versionSummary.isDeleteMarker()) {
-							try {
-								GetObjectTaggingResult result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey(), versionSummary.getVersionId()));
-								if (result != null && !result.getTagSet().isEmpty()) {
-									JSONObject json = new JSONObject();
-									for (Tag tag: result.getTagSet()) {
-										json.put(tag.getKey(), tag.getValue());
+							if (!versionSummary.isDeleteMarker()) {
+								try {
+									GetObjectTaggingResult result = null;
+									if (isFile) {
+										result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey(), versionSummary.getVersionId()));
+									} else {
+										result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey()));
 									}
-									tagging = json.toString();
+									
+									if (result != null && !result.getTagSet().isEmpty()) {
+										JSONObject json = new JSONObject();
+										for (Tag tag: result.getTagSet()) {
+											json.put(tag.getKey(), tag.getValue());
+										}
+										tagging = json.toString();
+									}
+								} catch (AmazonServiceException ase) {
+									logger.warn("{}:{} : failed get tagging info - {}", versionSummary.getKey(), versionSummary.getVersionId(), ase.getErrorCode());
 								}
-							} catch (AmazonServiceException ase) {
-								logger.warn("{}:{} : failed get tagging info - {}", versionSummary.getKey(), versionSummary.getVersionId(), ase.getErrorCode());
 							}
-						}
-						Map<String, String> info = DBManager.infoExistObjectVersion(jobId, versionSummary.getKey(), versionSummary.getVersionId());
-						if (info.isEmpty()) {
-							Utils.insertRerunMoveObjectVersion(jobId, versionSummary.getKey().charAt(versionSummary.getKey().length() - 1) != '/', 
-								versionSummary.getLastModified().toString(), 
+
+							DBWorker dbworker = new DBWorker(false,
+								isVersioning, 
+								jobId, 
+								isFile, 
+								String.valueOf(versionSummary.getLastModified().getTime()), 
 								versionSummary.getSize(), 
 								versionSummary.getKey(), 
 								versionSummary.getVersionId(), 
 								versionSummary.getETag(),
-								"",
 								tagging,
 								versionSummary.isDeleteMarker(), 
 								versionSummary.isLatest());
-							Utils.updateJobRerunInfo(jobId, versionSummary.getSize());
-						} else {
-							state = Integer.parseInt(info.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE));
-							String mTime = info.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_MTIME);
-							if (state == 3 && mTime.compareTo(versionSummary.getLastModified().toString()) == 0) {	
-								Utils.updateRerunSkipObjectVersion(jobId, versionSummary.getKey(), versionSummary.getVersionId());
-								Utils.updateJobRerunSkipInfo(jobId, versionSummary.getSize());
-							} else {
-								Utils.updateToMoveObjectVersion(jobId, versionSummary.getLastModified().toString(), versionSummary.getSize(), versionSummary.getKey(), versionSummary.getVersionId());
-								Utils.updateJobRerunInfo(jobId, versionSummary.getSize());
-							}
+							executor.execute(dbworker);
 						}
+						request.setKeyMarker(listing.getNextKeyMarker());
+						request.setVersionIdMarker(listing.getNextVersionIdMarker());
+					} while (listing.isTruncated());
+				} else {
+					ListObjectsRequest request = null;
+					if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
+						request = new ListObjectsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
+					} else {
+						request = new ListObjectsRequest().withBucketName(config.getBucket()).withPrefix("");
 					}
-					request.setKeyMarker(listing.getNextKeyMarker());
-					request.setVersionIdMarker(listing.getNextVersionIdMarker());
-				} while (listing.isTruncated());
-			} else {
+					ObjectListing result;
+					do {
+						List<List<Object>> paramList = new ArrayList<List<Object>>();
+						result = client.listObjects(request);
+						for (S3ObjectSummary objectSummary : result.getObjectSummaries()) {		
+							count++;
+							String tagging = null;
+							GetObjectTaggingResult tagResult = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), objectSummary.getKey()));
+							if (tagResult != null && !tagResult.getTagSet().isEmpty()) {
+								JSONObject json = new JSONObject();
+								for (Tag tag: tagResult.getTagSet()) {
+									json.put(tag.getKey(), tag.getValue());
+								}
+								tagging = json.toString();
+							}
+
+							DBWorker dbworker = new DBWorker(false,
+								isVersioning, 
+								jobId, 
+								objectSummary.getKey().charAt(objectSummary.getKey().length() - 1) != '/', 
+								String.valueOf(objectSummary.getLastModified().getTime()), 
+								objectSummary.getSize(), 
+								objectSummary.getKey(),
+								objectSummary.getETag(),
+								tagging);
+							executor.execute(dbworker);
+						}
+
+						request.setMarker(result.getNextMarker());
+					} while (result.isTruncated());
+				}
+			}
+			executor.shutdown();
+			while (!executor.isTerminated()) {
+				try {
+					Thread.sleep(10);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
+		} catch (AmazonServiceException ase) {
+			Utils.logging(logger, ase);
+			logger.error("{} - {}", ase.getErrorCode(), ase.getMessage());
+			Utils.getDBInstance().insertErrorJob(jobId, ase.getErrorCode() + "," + ase.getErrorMessage());
+			System.exit(-1);
+        } catch (AmazonClientException ace) {
+			Utils.logging(logger, ace);
+        	logger.error("{}", ace.getMessage());
+			Utils.getDBInstance().insertErrorJob(jobId, ace.getMessage());
+        	System.exit(-1);
+        }
+	}
+
+	private void objectListRerun() {
+		ExecutorService executor = Executors.newFixedThreadPool(1000);
+		logger.info("objectListRerun ...");
+		try {
+			if (!targetVersioning) {
 				ListObjectsRequest request = null;
 				if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
 					request = new ListObjectsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
@@ -672,38 +690,127 @@ public class IfsS3 implements Repository, S3 {
 							tagging = json.toString();
 						}
 
-						Map<String, String> info = DBManager.infoExistObject(jobId, objectSummary.getKey());
-						if (info.isEmpty()) {
-							Utils.insertRerunMoveObject(jobId, objectSummary.getKey().charAt(objectSummary.getKey().length() - 1) != '/', 
-								objectSummary.getLastModified().toString(), 
-								objectSummary.getSize(), 
-								objectSummary.getKey(),
-								objectSummary.getETag(),
-								"",
-								tagging);
-								Utils.updateJobRerunInfo(jobId, objectSummary.getSize());
-						} else {
-							state = Integer.parseInt(info.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE));
-							String mTime = info.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_MTIME);
-							if (state == 3 && mTime.compareTo(objectSummary.getLastModified().toString()) == 0) {
-								Utils.updateRerunSkipObject(jobId, objectSummary.getKey());
-								Utils.updateJobRerunSkipInfo(jobId, objectSummary.getSize());
-							} else {
-								Utils.updateToMoveObject(jobId, objectSummary.getLastModified().toString(), objectSummary.getSize(), objectSummary.getKey());
-								Utils.updateJobRerunInfo(jobId, objectSummary.getSize());
-							}
-						}
+						DBWorker dbworker = new DBWorker(true,
+							isVersioning, 
+							jobId,
+							objectSummary.getKey().charAt(objectSummary.getKey().length() - 1) != '/', 
+							String.valueOf(objectSummary.getLastModified().getTime()), 
+							objectSummary.getSize(), 
+							objectSummary.getKey(), 
+							objectSummary.getETag(),
+							tagging);
+
+						executor.execute(dbworker);
 					}
 					request.setMarker(objectList.getNextMarker());
 				} while (objectList.isTruncated());
+			} else {
+				if (isVersioning) {
+					ListVersionsRequest request = null;
+					if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
+						request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
+					} else {
+						request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix("");
+					}
+	
+					VersionListing listing = null;
+					do {
+						listing = client.listVersions(request);
+						for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
+							String tagging = null;
+							boolean isFile = versionSummary.getKey().charAt(versionSummary.getKey().length() - 1) != '/';
+
+							if (!versionSummary.isDeleteMarker()) {
+								try {
+									GetObjectTaggingResult result = null;
+									if (isFile) {
+										result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey(), versionSummary.getVersionId()));
+									} else {
+										result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), versionSummary.getKey()));
+									}
+									if (result != null && !result.getTagSet().isEmpty()) {
+										JSONObject json = new JSONObject();
+										for (Tag tag: result.getTagSet()) {
+											json.put(tag.getKey(), tag.getValue());
+										}
+										tagging = json.toString();
+									}
+								} catch (AmazonServiceException ase) {
+									logger.warn("{}:{} : failed get tagging info - {}", versionSummary.getKey(), versionSummary.getVersionId(), ase.getErrorCode());
+								}
+							}
+
+							DBWorker dbworker = new DBWorker(true,
+								isVersioning, 
+								jobId,
+								isFile, 
+								String.valueOf(versionSummary.getLastModified().getTime()), 
+								versionSummary.getSize(), 
+								versionSummary.getKey(), 
+								versionSummary.getVersionId(), 
+								versionSummary.getETag(),
+								tagging,
+								versionSummary.isDeleteMarker(), 
+								versionSummary.isLatest());
+								
+							executor.execute(dbworker);
+						}
+						request.setKeyMarker(listing.getNextKeyMarker());
+						request.setVersionIdMarker(listing.getNextVersionIdMarker());
+					} while (listing.isTruncated());
+				} else {
+					ListObjectsRequest request = null;
+					if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
+						request = new ListObjectsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
+					} else {
+						request = new ListObjectsRequest().withBucketName(config.getBucket()).withPrefix("");
+					}
+	
+					ObjectListing objectList;
+					do {
+						objectList = client.listObjects(request);
+						for (S3ObjectSummary objectSummary : objectList.getObjectSummaries()) {
+							String tagging = null;
+							GetObjectTaggingResult result = client.getObjectTagging(new GetObjectTaggingRequest(config.getBucket(), objectSummary.getKey()));
+							if (result != null && !result.getTagSet().isEmpty()) {
+								JSONObject json = new JSONObject();
+								for (Tag tag: result.getTagSet()) {
+									json.put(tag.getKey(), tag.getValue());
+								}
+								tagging = json.toString();
+							}
+	
+							DBWorker dbworker = new DBWorker(true,
+								isVersioning, 
+								jobId,
+								objectSummary.getKey().charAt(objectSummary.getKey().length() - 1) != '/', 
+								String.valueOf(objectSummary.getLastModified().getTime()), 
+								objectSummary.getSize(), 
+								objectSummary.getKey(), 
+								objectSummary.getETag(),
+								tagging);
+	
+							executor.execute(dbworker);
+						}
+						request.setMarker(objectList.getNextMarker());
+					} while (objectList.isTruncated());
+				}
+			}
+			executor.shutdown();
+			while (!executor.isTerminated()) {
+				try {
+					Thread.sleep(10);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
 			}
 		} catch (AmazonServiceException ase) {
 			logger.error("{} - {}", ase.getErrorCode(), ase.getMessage());
-			DBManager.insertErrorJob(jobId, ase.getErrorCode() + "," + ase.getErrorMessage());
+			Utils.getDBInstance().insertErrorJob(jobId, ase.getErrorCode() + "," + ase.getErrorMessage());
 			System.exit(-1);
         } catch (AmazonClientException ace) {
         	logger.error("{}", ace.getMessage());
-        	DBManager.insertErrorJob(jobId, ace.getMessage());
+			Utils.getDBInstance().insertErrorJob(jobId, ace.getMessage());
         	System.exit(-1);
         }
 	}
@@ -774,18 +881,38 @@ public class IfsS3 implements Repository, S3 {
 	public ObjectData getObject(String bucket, String key, String versionId) {
 		ObjectData data = new ObjectData();
 		GetObjectRequest getObjectRequest = null;
-		S3Object s3Data = null;
+		S3Object s3Object = null;
 		
-		if (versionId == null || versionId.equalsIgnoreCase("null")) {
+		// if (versionId == null || versionId.equalsIgnoreCase("null")) {
+		if (versionId == null) {
 			getObjectRequest = new GetObjectRequest(bucket, key);
 		} else {
 			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId);
 		}
-		s3Data = client.getObject(getObjectRequest);
-		data.setMetadata(s3Data.getObjectMetadata());
-		data.setInputStream(s3Data.getObjectContent());
-		data.setSize(s3Data.getObjectMetadata().getContentLength());
+		s3Object = client.getObject(getObjectRequest);
+		data.setS3Object(s3Object);
+		data.setMetadata(s3Object.getObjectMetadata());
+		data.setInputStream(s3Object.getObjectContent());
+		data.setSize(s3Object.getObjectMetadata().getContentLength());
 
+		return data;
+	}
+
+	@Override
+	public ObjectData getObject(String bucket, String key, String versionId, long start) {
+		ObjectData data = new ObjectData();
+		GetObjectRequest getObjectRequest = null;
+		S3Object s3Object = null;
+
+		if (versionId == null) {
+			getObjectRequest = new GetObjectRequest(bucket, key).withRange(start);
+		} else {
+			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId).withRange(start);
+		}
+		s3Object = client.getObject(getObjectRequest);
+		data.setS3Object(s3Object);
+		data.setInputStream(s3Object.getObjectContent());
+		data.setSize(s3Object.getObjectMetadata().getContentLength());
 		return data;
 	}
 
@@ -793,16 +920,17 @@ public class IfsS3 implements Repository, S3 {
 	public ObjectData getObject(String bucket, String key, String versionId, long start, long end) {
 		ObjectData data = new ObjectData();
 		GetObjectRequest getObjectRequest = null;
-		S3Object s3Data = null;
+		S3Object s3Object = null;
 
 		if (versionId == null) {
 			getObjectRequest = new GetObjectRequest(bucket, key).withRange(start, end);
 		} else {
 			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId).withRange(start, end);
 		}
-		s3Data = client.getObject(getObjectRequest);
-		data.setInputStream(s3Data.getObjectContent());
-		data.setSize(s3Data.getObjectMetadata().getContentLength());
+		s3Object = client.getObject(getObjectRequest);
+		data.setS3Object(s3Object);
+		data.setInputStream(s3Object.getObjectContent());
+		data.setSize(s3Object.getObjectMetadata().getContentLength());
 		return data;
 	}
 
@@ -862,5 +990,144 @@ public class IfsS3 implements Repository, S3 {
 		}
 
 		return versioningStatus;
+	}
+
+	public ObjectMetadata getMetadata(String bucket, String key, String versionId) {
+		GetObjectMetadataRequest getObjectMetadataRequest = new GetObjectMetadataRequest(bucket, key).withVersionId(versionId);
+		return client.getObjectMetadata(getObjectMetadataRequest);
+	}
+
+	class DBWorker implements Runnable {
+		private boolean isRerun;
+		private boolean isVersioning;
+		private String jobId;
+		private boolean isFile;
+		private String mTime;
+		private long size;
+		private String path;
+		private String versionId;
+		private String etag;
+		private String tag;
+		private boolean isDelete;
+		private boolean isLatest;
+		// private final Logger logger = LoggerFactory.getLogger(DBWorker.class);
+
+		DBWorker(boolean isRerun, boolean isVersioning, String jobId, boolean isFile, String mTime, long size, String path, String etag, String tag) {
+			this.isRerun = isRerun;
+			this.isVersioning = isVersioning;
+			this.jobId = jobId;
+			this.isFile = isFile;
+			this.mTime = mTime;
+			this.size = size;
+			this.path = path;
+			this.etag = etag;
+			this.tag = tag;
+			// logger.info("DB worker, path = {}", path);
+		}
+
+		DBWorker(boolean isRerun, boolean isVersioning, String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String tag, boolean isDelete, boolean isLatest) {
+			this.isRerun = isRerun;
+			this.isVersioning = isVersioning;
+			this.jobId = jobId;
+			this.isFile = isFile;
+			this.mTime = mTime;
+			this.size = size;
+			this.path = path;
+			this.versionId = versionId;
+			this.etag = etag;
+			this.tag = tag;
+			this.isDelete = isDelete;
+			this.isLatest = isLatest;
+			// logger.info("DB worker, path = {}, versionId = {}", path, versionId);
+		}
+
+		@Override
+		public void run() {
+			if (isRerun) {
+				Map<String, String> info = Utils.getDBInstance().infoExistObjectVersion(jobId, path, versionId);
+				if (info.isEmpty()) {
+					if (isVersioning) {
+						Utils.insertRerunMoveObjectVersion(jobId, 
+							isFile,
+							mTime,
+							size,
+							path,
+							versionId,
+							etag,
+							null,
+							tag,
+							isDelete,
+							isLatest);
+					} else {
+						Utils.insertRerunMoveObject(jobId, 
+							isFile,
+							mTime,
+							size,
+							path,
+							etag,
+							null,
+							tag);
+					}
+					Utils.updateJobRerunInfo(jobId, size);
+				} else {
+					int state = Integer.parseInt(info.get(MariaDB.MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE));
+					String savedMTime = info.get(MariaDB.MOVE_OBJECTS_TABLE_COLUMN_MTIME);
+					String savedEtag = info.get(MariaDB.MOVE_OBJECTS_TABLE_COLUMN_ETAG);
+					
+					if (state == 3 && this.etag == null && savedEtag.compareTo("0") == 0) {
+						if (isVersioning) {
+							Utils.updateRerunSkipObjectVersion(jobId, path, versionId, isLatest);
+						} else {
+							Utils.updateRerunSkipObject(jobId, path);
+						}
+						Utils.updateJobRerunSkipInfo(jobId, size);
+					} else if (state == 3 && savedMTime.compareTo(this.mTime) == 0 && savedEtag.compareTo(this.etag) == 0) {
+						if (isVersioning) {
+							Utils.updateRerunSkipObjectVersion(jobId, path, versionId, isLatest);
+						} else {
+							Utils.updateRerunSkipObject(jobId, path);
+						}
+						Utils.updateJobRerunSkipInfo(jobId, size);
+					} else {
+						if (isVersioning) {
+							Utils.updateToMoveObjectVersion(jobId, this.mTime, size, path, versionId);
+						} else {
+							Utils.updateToMoveObject(jobId, this.mTime, size, path);
+						}
+						Utils.updateJobRerunInfo(jobId, size);
+					}
+				}
+			} else {
+				if (isVersioning) {
+					Utils.insertMoveObjectVersion(jobId, 
+						isFile, 
+						mTime, 
+						size, 
+						path, 
+						versionId,  
+						etag, 
+						null,
+						tag,
+						isDelete, 
+						isLatest);
+				} else {
+					Utils.insertMoveObject(jobId, 
+						isFile, 
+						mTime, 
+						size, 
+						path,
+						etag,
+						tag);
+				}
+				Utils.updateJobInfo(jobId, size);
+			}
+		}
+
+	}
+
+	@Override
+	public String putObject(String bucketName, String key, InputStream input, ObjectMetadata metadata) {
+		PutObjectRequest putObjectRequest = new PutObjectRequest(bucketName, key, input, metadata);
+		return client.putObject(putObjectRequest).getETag();
 	}
 }

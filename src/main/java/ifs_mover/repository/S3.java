@@ -25,5 +25,6 @@ public interface S3 {
     String completeMultipart(String bucket, String key, String uploadId, List<PartETag> list);
     void setTagging(String bucket, String key, List<Tag> tagSet);
     String putObject(boolean isFile, String bucket, String key, ObjectData data, long size);
+    String putObject(String bucketName, String key, InputStream input, ObjectMetadata metadata);
     void deleteObject(String bucket, String key, String versionId);
 }

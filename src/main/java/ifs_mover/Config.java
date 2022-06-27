@@ -35,6 +35,7 @@ public class Config {
 	private String bucket;
 	private String prefix;
 	private String moveSize;
+	private String versioning;
 	private String type;
 	
 	// for openstack swift
@@ -57,6 +58,7 @@ public class Config {
 	private final String BUCKET = "bucket";
 	private final String PREFIX = "prefix";
 	private final String MOVE_SIZE = "move_size";
+	private final String VERSIONING = "versioning";	// ON OFF
 
 	// for openstack swift support
 	private final String USER_NAME = "user_name";
@@ -104,6 +106,7 @@ public class Config {
 		projectId = properties.getProperty(PROJECT_ID);
 		projectName = properties.getProperty(PROJECT_NAME);
 		container = properties.getProperty(CONTAINER);
+		versioning = properties.getProperty(VERSIONING);
 
 		if (mountPoint != null && !mountPoint.isEmpty() && !mountPoint.endsWith("/")) {
 			mountPoint += "/";
@@ -251,5 +254,9 @@ public class Config {
 
 	public void setType(String type) {
 		this.type = type;
+	}
+
+	public String getVersoning() {
+		return versioning;
 	}
 }

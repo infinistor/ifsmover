@@ -12,12 +12,12 @@
 package ifs_mover;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import ifs_mover.db.MoverDB;
 import ifs_mover.repository.IfsS3;
 import ifs_mover.repository.ObjectData;
 import ifs_mover.repository.Repository;
@@ -35,7 +36,6 @@ import ifs_mover.repository.RepositoryFactory;
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.SdkClientException;
-import com.amazonaws.services.s3.model.BucketVersioningConfiguration;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.Tag;
@@ -55,12 +55,14 @@ public class ObjectMover {
 	private String jobId;
 	private Repository sourceRepository;
 	private IfsS3 targetRepository;
+	private boolean targetVersioning;
 
 	private final int GET_OBJECTS_LIMIT = 100;
 	private final String NO_SUCH_KEY = "NoSuchKey";
 	private final String NOT_FOUND = "Not Found";
 	private final long MEGA_BYTES = 1024 * 1024;
 	private final long GIGA_BYTES = 1024 * 1024 * 1024;
+	private final long MAX_MULTIPART_SIZE = 3 * GIGA_BYTES;
 	
 	public static class Builder {
 		private Config sourceConfig;
@@ -135,22 +137,16 @@ public class ObjectMover {
 	public void init() {
 		int result = sourceRepository.init(type);
 		if (result != Repository.NO_ERROR) {
-			DBManager.insertErrorJob(jobId, sourceRepository.getErrMessage());
+			Utils.getDBInstance().insertErrorJob(jobId, sourceRepository.getErrMessage());
 			System.out.println(sourceRepository.getErrMessage());
 			System.exit(-1);
 		}
 
 		result = targetRepository.init(type);
 		if (result != Repository.NO_ERROR) {
-			DBManager.insertErrorJob(jobId, targetRepository.getErrMessage());
+			Utils.getDBInstance().insertErrorJob(jobId, targetRepository.getErrMessage());
 			System.out.println("Error : " + targetRepository.getErrMessage());
 			System.exit(-1);
-		}
-
-		// check source bucket versioning
-		if (sourceRepository.isVersioning()) {
-			isVersioning = true;
-			targetRepository.setVersioning();
 		}
 
 		// make target bucket for swift
@@ -160,12 +156,42 @@ public class ObjectMover {
 				System.out.println("Error : " + targetRepository.getErrMessage());
 				System.exit(-1);
 			}
-		}		
+		}
 
-		sourceRepository.makeObjectList(isRerun);
+		// check target conf versioning
+		if (targetConfig.getVersoning() == null || targetConfig.getVersoning().isEmpty()) {
+			targetVersioning = true;
+		} else if (targetConfig.getVersoning().compareToIgnoreCase("OFF") == 0) {
+			targetVersioning = false;
+		} else {
+			targetVersioning = true;
+		}
 
+		// check source bucket versioning
+		if (sourceRepository.isVersioning()) {
+			// check target bucket versioning
+			if (!targetRepository.isVersioning()) {
+				if (targetVersioning) {
+					isVersioning = true;
+					targetRepository.setVersioning();
+				} else {
+					isVersioning = false;
+				}
+			} else {
+				isVersioning = true;
+				targetVersioning = true;
+			}
+		} else {
+			isVersioning = false;
+			targetVersioning = false;
+		}
+
+		logger.info("isVersioning : {}, targetVersioning : {}", isVersioning, targetVersioning);
+
+		sourceRepository.makeObjectList(isRerun, targetVersioning);
 		if (isRerun) {
-			DBManager.deleteCheckObjects(jobId);
+			// DBManager.deleteCheckObjects(jobId);
+			Utils.getDBInstance().deleteCheckObjects(jobId);
 		}
 	}
 
@@ -177,135 +203,141 @@ public class ObjectMover {
 		long sequence = 0;
 
 		ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-		List<Map<String, String>> list = null;
-		List<Map<String, String>> jobList = null;
+		List<HashMap<String, Object>> list = null;
+		List<HashMap<String, Object>> jobList = null;
 
-		String prefix = targetConfig.getPrefix();
-		if (prefix != null && !prefix.isEmpty()) {
-			StringBuilder bld = new StringBuilder();
-			String[] tmpArr = prefix.split("/");
-			for (String str : tmpArr) {
-				if (!str.isEmpty()) {
-					bld.append(str);
-					bld.append("/");
-				}
-			}
-			String prefixFinal = bld.toString();
-			logger.info("target prefix : {}", prefixFinal);
-			if (prefixFinal.length() >= 1) {
-				try {
-					ObjectMetadata meta = new ObjectMetadata();
-					meta.setContentLength(0);
-					InputStream is = new ByteArrayInputStream(new byte[0]);
-					ObjectData data = new ObjectData(meta, is);
-					targetRepository.putObject(false, targetConfig.getBucket(), prefixFinal, data, 0L);
-					data.getInputStream().close();
-					logger.info("make target prefix {}", prefixFinal);
-				} catch (AmazonServiceException ase) {
-					logger.warn("{} {} {}", prefixFinal, ase.getErrorCode(), ase.getErrorMessage());
-				} catch (AmazonClientException ace) {
-					logger.warn("{} {}", prefixFinal, ace.getMessage());
-				} catch (IOException e) {
-					logger.warn("{} {}", prefixFinal, e.getMessage());
-				}
-			}
-		}
-
-		long maxSequence = DBManager.getMaxSequence(jobId);
-
-		while (true) {
-			if (!isDoneDistribute) {
-				list = DBManager.getToMoveObjectsInfo(jobId, sequence, GET_OBJECTS_LIMIT);
-				if (list.isEmpty() && sequence >= maxSequence) {
-					if (jobList != null && !jobList.isEmpty()) {
-						Mover mover = null;
-						if (type.equalsIgnoreCase(Repository.SWIFT)) {
-							mover = new Mover(jobList);
-						} else {
-							mover = new Mover(jobList);
-						}
-						executor.execute(mover);
+		try {
+			String prefix = targetConfig.getPrefix();
+			if (prefix != null && !prefix.isEmpty()) {
+				StringBuilder bld = new StringBuilder();
+				String[] tmpArr = prefix.split("/");
+				for (String str : tmpArr) {
+					if (!str.isEmpty()) {
+						bld.append(str);
+						bld.append("/");
 					}
-					isDoneDistribute = true;
-					executor.shutdown();
-					continue;
 				}
-				sequence += GET_OBJECTS_LIMIT;
-				
-				for (Map<String, String> jobInfo : list) {
-					path = jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_PATH);
-					versionId = jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
+				String prefixFinal = bld.toString();
+				logger.info("target prefix : {}", prefixFinal);
+				if (prefixFinal.length() >= 1) {
+					try {
+						ObjectMetadata meta = new ObjectMetadata();
+						meta.setContentLength(0);
+						InputStream is = new ByteArrayInputStream(new byte[0]);
+						ObjectData data = new ObjectData(meta, is);
+						targetRepository.putObject(false, targetConfig.getBucket(), prefixFinal, data, 0L);
+						data.getInputStream().close();
+						logger.info("make target prefix {}", prefixFinal);
+					} catch (AmazonServiceException ase) {
+						logger.warn("{} {} {}", prefixFinal, ase.getErrorCode(), ase.getErrorMessage());
+					} catch (AmazonClientException ace) {
+						logger.warn("{} {}", prefixFinal, ace.getMessage());
+					} catch (IOException e) {
+						logger.warn("{} {}", prefixFinal, e.getMessage());
+					}
+				}
+			}
+	
+			long maxSequence = Utils.getDBInstance().getMaxSequence(jobId);
+			int state = 0;
+			while (true) {
+				if (!isDoneDistribute) {
+					list = Utils.getDBInstance().getToMoveObjectsInfo(jobId, sequence, GET_OBJECTS_LIMIT);
 
-					Utils.updateObjectMove(jobId, path, versionId);
-					
-					if (path.compareTo(finalPath) != 0) {
-						finalPath = path;
-						if (jobList == null) {
-							jobList = new ArrayList<Map<String, String>>();
-							jobList.add(jobInfo);
-						} else {
-							Mover mover = new Mover(jobList);
+					if (list == null && sequence >= maxSequence) {
+						if (jobList != null && !jobList.isEmpty()) {
+							Mover mover = new Mover(isRerun, jobList);
 							executor.execute(mover);
-							jobList = new ArrayList<Map<String, String>>();
-							jobList.add(jobInfo);
 						}
-					} else {
-						if (jobList == null) {
-							jobList = new ArrayList<Map<String, String>>();
-						}
-						jobList.add(jobInfo);
+						isDoneDistribute = true;
+						executor.shutdown();
+						continue;
 					}
-				}
-			} 
-			
-			if (isDoneDistribute && executor.isTerminated()) {
-				deleteMove();
+					sequence += GET_OBJECTS_LIMIT;
+					if (list != null && !list.isEmpty()) {
+						for (HashMap<String, Object> jobInfo : list) {
+							state = (int) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE);
+							if (state != 1) {
+								continue;
+							}
 
+							path = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_PATH);
+							versionId = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
+							logger.info("path : {}, versionId : {}", path, versionId);
+							Utils.updateObjectMove(jobId, path, versionId);
+
+							if (path.compareTo(finalPath) != 0) {
+								finalPath = path;
+								if (jobList == null) {
+									jobList = new ArrayList<HashMap<String, Object>>();
+									jobList.add(jobInfo);
+								} else {
+									Mover mover = new Mover(isRerun, jobList);
+									executor.execute(mover);
+									jobList = new ArrayList<HashMap<String, Object>>();
+									jobList.add(jobInfo);
+								}
+							} else {
+								if (jobList == null) {
+									jobList = new ArrayList<HashMap<String, Object>>();
+								}
+								jobList.add(jobInfo);
+							}
+						}
+					}
+				} 
+				
 				if (isDoneDistribute && executor.isTerminated()) {
-					for (Map<String, String> movedObject : Utils.getMovedObjectList()) {
-						path = movedObject.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_PATH);
-						versionId = movedObject.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
+					deleteMove();
 	
-						DBManager.updateObjectMoveComplete(jobId, path, versionId);
-					}
-	
-					for (Map<String, Long> movedJob : Utils.getMovedJobList()) {
-						long size = movedJob.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_SIZE).longValue();
-	
-						DBManager.updateJobMoved(jobId, size);
-					}
-	
-					for (Map<String, String> failedObject : Utils.getFailedObjectList()) {
-						path = failedObject.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_PATH);
-						versionId = failedObject.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
-	
-						DBManager.updateObjectMoveEventFailed(jobId, path, versionId, "", "retry failure");
-					}
-	
-					for (Map<String, Long> failedJob : Utils.getFailedJobList()) {
-						long size = failedJob.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_SIZE).longValue();
-						DBManager.updateJobFailedInfo(jobId, size);
-					}
-
-					if (isVersioning) {
-						try {
-							targetRepository.setBucketVersioning(sourceRepository.getVersioningStatus());
-						} catch (AmazonServiceException ase) {
-							logger.warn("{} {}", ase.getErrorCode(), ase.getErrorMessage());
-						} catch (SdkClientException  ace) {
-							logger.warn("{}", ace.getMessage());
+					if (isDoneDistribute && executor.isTerminated()) {
+						for (Map<String, String> movedObject : Utils.getMovedObjectList()) {
+							path = movedObject.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_PATH);
+							versionId = movedObject.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
+		
+							Utils.getDBInstance().updateObjectMoveComplete(jobId, path, versionId);
 						}
-					}
+		
+						for (Map<String, Long> movedJob : Utils.getMovedJobList()) {
+							long size = movedJob.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_SIZE).longValue();
+		
+							Utils.getDBInstance().updateJobMoved(jobId, size);
+						}
+		
+						for (Map<String, String> failedObject : Utils.getFailedObjectList()) {
+							path = failedObject.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_PATH);
+							versionId = failedObject.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
+		
+							Utils.getDBInstance().updateObjectMoveEventFailed(jobId, path, versionId, "", "retry failure");
+						}
+		
+						for (Map<String, Long> failedJob : Utils.getFailedJobList()) {
+							long size = failedJob.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_SIZE).longValue();
+							Utils.getDBInstance().updateJobFailedInfo(jobId, size);
+						}
 	
-					return;
-				}
-			} else {
-				try {
-					Thread.sleep(10);
-				} catch (InterruptedException e) {
-					logger.error(e.getMessage());
+						if (isVersioning && targetVersioning) {
+							try {
+								targetRepository.setBucketVersioning(sourceRepository.getVersioningStatus());
+							} catch (AmazonServiceException ase) {
+								logger.warn("{} {}", ase.getErrorCode(), ase.getErrorMessage());
+							} catch (SdkClientException  ace) {
+								logger.warn("{}", ace.getMessage());
+							}
+						}
+						logger.info("End of moving jobs");
+						return;
+					}
+				} else {
+					try {
+						Thread.sleep(10);
+					} catch (InterruptedException e) {
+						logger.error(e.getMessage());
+					}
 				}
 			}
+		} catch (Exception e) {
+			Utils.logging(logger, e);
 		}
 	}
 
@@ -318,20 +350,21 @@ public class ObjectMover {
 		long limit = 100;
 
 		ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-		List<Map<String, String>> list = null;
-		List<Map<String, String>> jobList = null;
+		List<HashMap<String, Object>> list = null;
+		List<HashMap<String, Object>> jobList = null;
 
 		sequence = 0;
 		isDoneDistribute = false;
 
-		long maxSequence = DBManager.getMaxSequence(jobId);
+		long maxSequence = Utils.getDBInstance().getMaxSequence(jobId);
 
+		int state = 0;
 		while (true) {
 			if (!isDoneDistribute) {
-				list = DBManager.getToDeleteObjectsInfo(jobId, sequence, limit);
-				if (list.isEmpty() && sequence >= maxSequence) {
+				list = Utils.getDBInstance().getToDeleteObjectsInfo(jobId, sequence, limit);
+				if (list == null && sequence >= maxSequence) {
 					if (jobList != null && !jobList.isEmpty()) {
-						Mover mover = new Mover(jobList);
+						Mover mover = new Mover(isRerun, jobList);
 						executor.execute(mover);
 					}
 					isDoneDistribute = true;
@@ -340,28 +373,34 @@ public class ObjectMover {
 				}
 				sequence += limit;
 
-				for (Map<String, String> jobInfo : list) {
-					path = jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_PATH);
-					versionId = jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
-
-					Utils.updateObjectMove(jobId, path, versionId);
-					
-					if (path.compareTo(finalPath) != 0) {
-						finalPath = path;
-						if (jobList == null) {
-							jobList = new ArrayList<Map<String, String>>();
-							jobList.add(jobInfo);
+				if (list != null && !list.isEmpty()) {
+					for (HashMap<String, Object> jobInfo : list) {
+						state = (int) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE);
+						if (state != 1) {
+							continue;
+						}
+						path = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_PATH);
+						versionId = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
+	
+						Utils.updateObjectMove(jobId, path, versionId);
+						
+						if (path.compareTo(finalPath) != 0) {
+							finalPath = path;
+							if (jobList == null) {
+								jobList = new ArrayList<HashMap<String, Object>>();
+								jobList.add(jobInfo);
+							} else {
+								Mover mover = new Mover(isRerun, jobList);
+								executor.execute(mover);
+								jobList = new ArrayList<HashMap<String, Object>>();
+								jobList.add(jobInfo);
+							}
 						} else {
-							Mover mover = new Mover(jobList);
-							executor.execute(mover);
-							jobList = new ArrayList<Map<String, String>>();
+							if (jobList == null) {
+								jobList = new ArrayList<HashMap<String, Object>>();
+							}
 							jobList.add(jobInfo);
 						}
-					} else {
-						if (jobList == null) {
-							jobList = new ArrayList<Map<String, String>>();
-						}
-						jobList.add(jobInfo);
 					}
 				}
 			}
@@ -375,7 +414,8 @@ public class ObjectMover {
 
 	class Mover implements Runnable {
 		final Logger logger = LoggerFactory.getLogger(Mover.class);
-		List<Map<String, String>> list;
+		private boolean isRerun;
+		List<HashMap<String, Object>> list = new ArrayList<HashMap<String, Object>>();
 		private long moveSize;
 
 		private String path;
@@ -395,11 +435,14 @@ public class ObjectMover {
 		private boolean isDelete;
 		private boolean latestIsDelete;
 		private boolean isLatest;
+		private boolean skipCheck;
+		private boolean latestSkipCheck;
 
 		private boolean isFault;
 		private boolean isDoneLatest;
 		
-		public Mover(List<Map<String, String>> list) {
+		public Mover(boolean isRerun, List<HashMap<String, Object>> list) {
+			this.isRerun = isRerun;
 			this.list = list;
 			getMoveSize();
 		}
@@ -422,7 +465,7 @@ public class ObjectMover {
 			}
 		}
 		
-		private boolean moveObject(String path, boolean isDelete, boolean isFile, String versionId, String etag, String multipartInfo, String tag, long size) {
+		private boolean moveObject(String path, boolean isDelete, boolean isFile, String versionId, String etag, String multipartInfo, String tag, long size, boolean skipCheck) {
 			String sourcePath = null;
 			String targetPath = null;
 			String sourceBucket = null;
@@ -477,13 +520,51 @@ public class ObjectMover {
 				}
 			}
 
+			if (versionId != null && versionId.compareTo("0") == 0) {
+				versionId = null;
+			}
+
 			try {
 				if (isDelete) {
-					targetRepository.deleteObject(targetBucket, targetPath, null);
-					logger.info("delete success : {}", sourcePath);
+					if (isRerun) {
+						if (isLatest && !skipCheck) {
+							targetRepository.deleteObject(targetBucket, targetPath, null);
+							logger.info("delete success : {}", sourcePath);
+						} else {
+							// Ignore this delete marker because it is not lastest
+							logger.warn("Ignore this delete marker because it is not lastest. path={}, versionId={}", path, versionId);
+						}
+					} else {
+						if (isLatest) {
+							targetRepository.deleteObject(targetBucket, targetPath, null);
+							logger.info("delete success : {}", sourcePath);
+						} else {
+							// Ignore this delete marker because it is not lastest
+							logger.warn("Ignore this delete marker because it is not lastest. path={}, versionId={}", path, versionId);
+						}
+					}
+					Utils.getDBInstance().updateDeleteMarker(jobId, path, versionId);
 				} else {
 					if (isFile) {
-						if (multipartInfo != null) {
+						// check rerun delete
+						if (isRerun && !skipCheck) {
+							if (isVersioning) {
+								logger.warn("Ignore this object(skip check is 0), path : {}, versionId : {}", path, versionId);
+								Utils.getDBInstance().updateDeleteMarker(jobId, path, versionId);
+								// In versioning, delete from db if not lastest
+								// if (!isLatest) {
+								// 	Utils.getDBInstance().deleteObjects(jobId, path, versionId);
+								// }
+							} else {
+								targetRepository.deleteObject(targetBucket, targetPath, null);
+								Utils.getDBInstance().updateJobDeleted(jobId, size);
+								Utils.getDBInstance().deleteObjects(jobId, path, versionId);
+								logger.info("delete success : {}", sourcePath);
+							}
+							return true;
+						}
+
+						if (multipartInfo != null && !multipartInfo.isEmpty()) {
 							// for swift large file (more than 5G)
 							String uploadId = targetRepository.startMultipart(targetBucket, targetPath, null);
 							List<PartETag> partList = new ArrayList<PartETag>();
@@ -493,6 +574,9 @@ public class ObjectMover {
 							do {
 								String partPath = String.format("%08d", partNumber++);
 								partPath = multiPath[1] + partPath;
+								if (data != null) {
+									data.getS3Object().close();
+								}
 								data = sourceRepository.getObject(multiPath[0], partPath, null);
 								if (data != null) {
 									String partETag = targetRepository.uploadPart(targetBucket, targetPath, uploadId, data.getInputStream(), partNumber, data.getSize());
@@ -506,7 +590,7 @@ public class ObjectMover {
 								targetRepository.setTagging(targetBucket, targetPath, tagSet);
 							}
 							logger.info("move success : {}", path);
-						} else if ((!type.equalsIgnoreCase(Repository.IFS_FILE) && size > GIGA_BYTES)
+						} else if ((!type.equalsIgnoreCase(Repository.IFS_FILE) && size > MAX_MULTIPART_SIZE)
 									|| (!type.equalsIgnoreCase(Repository.IFS_FILE) && (moveSize != 0 && size > moveSize))) {
 							// send multipart
 							if (versionId != null && !versionId.isEmpty()) {
@@ -520,8 +604,9 @@ public class ObjectMover {
 							} else {
 								limitSize = moveSize;
 							}
-							ObjectData objData = sourceRepository.getObject(sourceBucket, sourcePath, versionId);
-							String uploadId = targetRepository.startMultipart(targetBucket, targetPath, objData.getMetadata());
+
+							ObjectMetadata objectMetadata = sourceRepository.getMetadata(sourceBucket, sourcePath, versionId);
+							String uploadId = targetRepository.startMultipart(targetBucket, targetPath, objectMetadata);
 							List<PartETag> partList = new ArrayList<PartETag>();
 							int partNumber = 1;
 
@@ -537,11 +622,13 @@ public class ObjectMover {
 								if (data != null) {
 									String partETag = targetRepository.uploadPart(targetBucket, targetPath, uploadId, data.getInputStream(), partNumber, data.getSize());
 									partList.add(new PartETag(partNumber, partETag));
-									data.getInputStream().close();
-									logger.debug("{} - move part : {}, size : {}", path, partNumber, data.getSize());
+									data.close();
+									logger.info("{} - move part : {}, size : {}", path, partNumber, data.getSize());
 								}
 							}
+
 							targetRepository.completeMultipart(targetBucket, targetPath, uploadId, partList);
+
 							if (tagSet.size() > 0) {
 								targetRepository.setTagging(targetBucket, targetPath, tagSet);
 							}
@@ -553,21 +640,25 @@ public class ObjectMover {
 							}
 						} else {
 							ObjectData data = null;
+							String s3ETag = null;
 							if (type.equalsIgnoreCase(Repository.IFS_FILE)) {
 								data = sourceRepository.getObject(sourcePath);
 							} else {
-								data = sourceRepository.getObject(sourceBucket, sourcePath, versionId);
-								if (data == null) {
-									logger.warn("not found : {} {}", sourceBucket, sourcePath);
-									return false;
+								if (size > 0) {
+									data = sourceRepository.getObject(sourceBucket, sourcePath, versionId, 0);
+									if (data == null) {
+										logger.warn("not found : {} {}", sourceBucket, sourcePath);
+										return false;
+									}
+									s3ETag = targetRepository.putObject(isFile, targetBucket, targetPath, data, data.getSize());
+									data.close();
+								} else {
+									ObjectMetadata meta = sourceRepository.getMetadata(sourceBucket, sourcePath, versionId);
+									InputStream is = new ByteArrayInputStream(new byte[0]);
+									targetRepository.putObject(targetBucket, targetPath, is, meta); 
 								}
 							}
 
-							String s3ETag = targetRepository.putObject(isFile, targetBucket, targetPath, data, data.getSize());
-							if (data.getInputStream() != null) {
-								data.getInputStream().close();
-							}
-							
 							if (tagSet.size() > 0) {
 								targetRepository.setTagging(targetBucket, targetPath, tagSet);
 							}
@@ -580,14 +671,29 @@ public class ObjectMover {
 										logger.info("move success : {}", path);
 									}
 								} else {
-									logger.warn("The etags are different. source : {}, target : {}", etag, s3ETag);
-									return false;
+									// The etag is different, but we have already putObjected, so let's just leave a log.
+									logger.warn("{}:{} -- The etags are different. source : {}, target : {}", path, versionId, etag, s3ETag);
+									return true;
 								}
 							} else {
 								logger.info("move success : {}", path);
 							}
 						}
 					} else {	// move dir
+						// check rerun delete
+						if (isRerun && !skipCheck) {
+							if (isVersioning) {
+								logger.warn("Ignore this object(skip check is 0), path : {}, versionId : {}", path, versionId);
+								Utils.getDBInstance().updateDeleteMarker(jobId, path, versionId);
+							} else {
+								targetRepository.deleteObject(targetBucket, targetPath, null);
+								Utils.getDBInstance().updateJobDeleted(jobId, size);
+								Utils.getDBInstance().deleteObjects(jobId, path, versionId);
+								logger.info("delete success : {}", sourcePath);
+							}
+							return true;
+						}
+
 						ObjectData data;
 						if (type.equalsIgnoreCase(Repository.IFS_FILE)) {
 							ObjectMetadata meta = new ObjectMetadata();
@@ -597,12 +703,24 @@ public class ObjectMover {
 							targetRepository.putObject(isFile, targetBucket, targetPath, data, 0L);
 							is.close();
 						} else {
-							data = sourceRepository.getObject(sourceBucket, sourcePath, versionId);
-							if (data == null) {
-								logger.warn("not found : {} {}", sourceBucket, sourcePath);
-								return false;
+							if (versionId != null && versionId.compareToIgnoreCase("null") == 0) {
+								ObjectMetadata meta = sourceRepository.getMetadata(sourceBucket, sourcePath, versionId);
+								InputStream is = new ByteArrayInputStream(new byte[0]);
+								// data = sourceRepository.getObject(sourceBucket, sourcePath, versionId);
+								// data = sourceRepository.getObject(sourceBucket, sourcePath, null);
+								// if (data == null) {
+								// 	logger.warn("not found : {} {}", sourceBucket, sourcePath);
+								// 	return false;
+								// }
+								// targetRepository.putObject(isFile, targetBucket, targetPath, data, 0L);
+								targetRepository.putObject(targetBucket, targetPath, is, meta);
+								is.close();
+								if (tagSet.size() > 0) {
+									targetRepository.setTagging(targetBucket, targetPath, tagSet);
+								}
+							} else {
+								logger.info("Ignore this object because Because it is a directory with versionid, path : {}, versionId : {}", path, versionId);
 							}
-							targetRepository.putObject(isFile, targetBucket, targetPath, data, 0L);
 						}
 
 						if (versionId != null && !versionId.isEmpty()) {
@@ -624,6 +742,55 @@ public class ObjectMover {
 				return false;
 			} catch (AmazonClientException ace) {
 				logger.warn("{} {}", path, ace.getMessage());
+				// Ignore 'etag' even if it's different after gettingObject in S3
+				// try {
+				// 	ObjectMetadata objectMetadata = sourceRepository.getMetadata(sourceBucket, sourcePath, versionId);
+				// 	String command = null;
+				// 	File file = null;
+				// 	if (versionId != null && !versionId.isEmpty() || versionId.compareToIgnoreCase("null") == 0) {
+				// 		command = "aws s3api get-object --endpoint-url http://" + sourceConfig.getEndPoint() + " --bucket " + sourceBucket + " --key " + sourcePath + " ./download/" + jobId + "/" + sourcePath;
+				// 		file = new File("./download/" + jobId + "/" + sourcePath);
+				// 	} else {
+				// 		command = "aws s3api get-object --endpoint-url http://" + sourceConfig.getEndPoint() + " --bucket " + sourceBucket + " --key " + sourcePath + " --version-id " + versionId + " ./download/" + jobId + "/" + sourcePath + "_" + versionId;
+				// 		file = new File("./download/" + jobId + "/" + sourcePath + "_" + versionId);
+				// 	}
+
+				// 	com.google.common.io.Files.createParentDirs(file);
+					
+				// 	logger.info("command : {}", command);
+				// 	Process process = Runtime.getRuntime().exec(command);
+				// 	BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+				// 	String line = null;
+
+				// 	while ((line = reader.readLine()) != null) {
+				// 		logger.info("{}", line);
+				// 	}
+					
+				// 	process.waitFor();
+				// 	logger.info("saved file ...");
+				// 	FileInputStream fis = new FileInputStream(file);
+
+				// 	targetRepository.putObject(targetBucket, targetPath, fis, objectMetadata);
+				// 	fis.close();
+				// 	file.delete();
+
+				// 	logger.info("delete file ...");
+
+				// 	if (tagSet.size() > 0) {
+				// 		targetRepository.setTagging(targetBucket, targetPath, tagSet);
+				// 	}
+
+				// 	if (versionId != null && !versionId.isEmpty()) {
+				// 		logger.info("move success : {}:{}", path, versionId);
+				// 	} else {
+				// 		logger.info("move success : {}", path);
+				// 	}
+
+				// 	return true;
+				// } catch (Exception e) {
+				// 	Utils.logging(logger, e);
+				// }
+
 				return false;
 			} catch (Exception e) {
 				Utils.logging(logger, e);
@@ -633,9 +800,9 @@ public class ObjectMover {
 			return true;
 		}
 	
-		private void retryMoveObject(String path, boolean isDelete, boolean isFile, String versionId, String etag, String multipartInfo, String tag, long size) {
+		private void retryMoveObject(String path, boolean isDelete, boolean isFile, String versionId, String etag, String multipartInfo, String tag, long size, boolean skipCheck) {
 			for (int i = 0; i < Utils.RETRY_COUNT; i++) {
-				if (moveObject(path, isDelete, isFile, versionId, etag, multipartInfo, tag, size)) {
+				if (moveObject(path, isDelete, isFile, versionId, etag, multipartInfo, tag, size, skipCheck)) {
 					return;
 				}
 			}
@@ -645,59 +812,114 @@ public class ObjectMover {
 
 		@Override
 		public void run() {
-			MDC.clear();
-			MDC.put("logFileName", "ifs_mover." + jobId + ".log");
-			isFault = false;
-			isDoneLatest = true;
-			for (Map<String, String> jobInfo : list) {
-				path = jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_PATH);
-				isFile = Integer.parseInt(jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_ISFILE)) == 1;
-				size = Long.parseLong(jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_SIZE));
-				versionId = jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
-				etag = jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_ETAG);
-				multipartInfo = jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_MULTIPART_INFO);
-				tag = jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_TAG);
-				isDelete = Integer.parseInt(jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_ISDELETE)) == 1;
-				isLatest = Integer.parseInt(jobInfo.get(DBManager.MOVE_OBJECTS_TABLE_COLUMN_ISLATEST)) == 1;
+			try {
+				MDC.clear();
+				MDC.put("logFileName", "ifs_mover." + jobId + ".log");
+				isFault = false;
+				isDoneLatest = true;
 
-				if (isLatest) {
-					isDoneLatest = false;
-					latestPath = path;
-					latestIsFile = isFile;
-					latestSize = size;
-					latestVersionId = versionId;
-					latestETag = etag;
-					latestMultipartInfo = multipartInfo;
-					latestTag = tag;
-					latestIsDelete = isDelete;
-					continue;
+				if (list.size() > 0) {
+					logger.debug("before sort ...");
+					for (HashMap<String, Object> jobInfo : list) {
+						String path = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_PATH);
+						String versionId = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
+						String mtime = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_MTIME);
+						logger.debug("path:{}, versionId:{}, mtime:{}", path, versionId, mtime);
+					}
+					
+					Collections.sort(list, new ObjectMtimeComparator());
+					logger.debug("after sort ...");
+					for (HashMap<String, Object> jobInfo : list) {
+						String path = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_PATH);
+						String versionId = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
+						String mtime = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_MTIME);
+						logger.debug("path:{}, versionId:{}, mtime:{}", path, versionId, mtime);
+					}
 				}
 
-				retryMoveObject(path, isDelete, isFile, versionId, etag, multipartInfo, tag, size);
-				
-				if (isFault) {
-					logger.error("move failed : {}", path);
-					Utils.updateObjectVersionMoveEventFailed(jobId, path, versionId, "", "retry failure");
-					Utils.updateJobFailedInfo(jobId, size);
-				} else {
-					Utils.updateJobMoved(jobId, size);
-					Utils.updateObjectMoveEvent(jobId, path, versionId);
+				for (HashMap<String, Object> jobInfo : list) {
+					path = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_PATH);
+					isFile = (byte) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_ISFILE) == 1; 
+					size = (long) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_SIZE);
+					versionId = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_VERSIONID);
+
+					etag = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_ETAG);
+					multipartInfo = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_MULTIPART_INFO);
+					if (multipartInfo != null && multipartInfo.compareTo("0") == 0) {
+						multipartInfo = null;
+					}
+
+					tag = (String) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_TAG);
+
+					if (tag != null && tag.compareTo("0") == 0) {
+						tag = null;
+					}
+					isDelete = (byte) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_ISDELETE) == 1;
+					isLatest = (byte) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_ISLATEST) == 1;
+					skipCheck = (byte) jobInfo.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_SKIP_CHECK) == 1;
+
+					// Latest should be performed at the end.
+					if (isLatest) {
+						isDoneLatest = false;
+						latestPath = path;
+						latestIsFile = isFile;
+						latestSize = size;
+						latestVersionId = versionId;
+						latestETag = etag;
+						latestMultipartInfo = multipartInfo;
+						latestTag = tag;
+						latestIsDelete = isDelete;
+						latestSkipCheck = skipCheck;
+						continue;
+					}
+
+					retryMoveObject(path, isDelete, isFile, versionId, etag, multipartInfo, tag, size, skipCheck);
+
+					if (isRerun && !skipCheck) {
+						continue;
+					}
+					
+					if (isFault) {
+						logger.error("move failed : {}", path);
+						Utils.updateObjectVersionMoveEventFailed(jobId, path, versionId, "", "retry failure");
+						Utils.updateJobFailedInfo(jobId, size);
+					} else {
+						Utils.updateJobMoved(jobId, size);
+						Utils.updateObjectMoveEvent(jobId, path, versionId);
+					}
+					isFault = false;
 				}
+
+				if (!isDoneLatest) {
+					// Latest should be performed at the end.
+					retryMoveObject(latestPath, latestIsDelete, latestIsFile, latestVersionId, latestETag, latestMultipartInfo, latestTag, size, latestSkipCheck);
+					if (!(isRerun && !skipCheck)) {
+						if (isFault) {
+							logger.error("move failed : {}", latestPath);
+							Utils.updateObjectVersionMoveEventFailed(jobId, latestPath, latestVersionId, "", "retry failure");
+							Utils.updateJobFailedInfo(jobId, latestSize);
+						} else {
+							Utils.updateJobMoved(jobId, latestSize);			
+							Utils.updateObjectMoveEvent(jobId, latestPath, latestVersionId);
+						}
+					}
+				}
+				MDC.remove("logFileName");
+			} catch (Exception e) {
+				Utils.logging(logger, e);
 			}
+		}
+	}
 
-			if (!isDoneLatest) {
-				retryMoveObject(latestPath, latestIsDelete, latestIsFile, latestVersionId, latestETag, latestMultipartInfo, latestTag, size);
-				
-				if (isFault) {
-					logger.error("move failed : {}", latestPath);
-					Utils.updateObjectVersionMoveEventFailed(jobId, latestPath, latestVersionId, "", "retry failure");
-					Utils.updateJobFailedInfo(jobId, latestSize);
-				} else {
-					Utils.updateJobMoved(jobId, latestSize);			
-					Utils.updateObjectMoveEvent(jobId, latestPath, latestVersionId);
-				}
-			}
-			MDC.remove("logFileName");
+	class ObjectMtimeComparator implements Comparator<HashMap<String, Object>> {
+
+		@Override
+		public int compare(HashMap<String, Object> o1, HashMap<String, Object> o2) {
+			// TODO Auto-generated method stub
+			String mtime1 = (String) o1.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_MTIME);
+			String mtime2 = (String) o2.get(MoverDB.MOVE_OBJECTS_TABLE_COLUMN_MTIME);
+
+			return mtime1.compareTo(mtime2);
 		}
 	}
 }

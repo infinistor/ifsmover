@@ -12,6 +12,8 @@ package ifs_mover.repository;
 
 import java.util.List;
 
+import com.amazonaws.services.s3.model.ObjectMetadata;
+
 import ifs_mover.Config;
 
 public interface Repository {
@@ -33,6 +35,7 @@ public interface Repository {
     public final int AMAZON_SERVICE_EXCEPTION = -2007;
     public final int BUCKET_NO_EXIST = -2008;
     public final int FAILED_CREATE_BUCKET = -2009;
+    public final int ACCESS_DENIED_ERROR = -2010;
 
     public final int SWIFT_DOMAIN_VALUE_EMPTY = -3000;
     public final int SWIFT_PROJECT_VALUE_EMPTY = -3001;
@@ -50,10 +53,13 @@ public interface Repository {
     
     List<String> getBucketList();
     boolean createBuckets(List<String> list);
-    void makeObjectList(boolean isRerun);
+    void makeObjectList(boolean isRerun, boolean targetVersioning);
     String setPrefix(String path);
     String setTargetPrefix(String path);
+
+    ObjectMetadata getMetadata(String bucket, String key, String versionId);
     ObjectData getObject(String path);
     ObjectData getObject(String bucket, String key, String versionId);
+    ObjectData getObject(String bucket, String key, String versionId, long start);
     ObjectData getObject(String bucket, String key, String versionId, long start, long end);
 }

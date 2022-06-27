@@ -11,17 +11,21 @@
 package ifs_mover.repository;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 
 import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.S3Object;
 
 public class ObjectData {
+    private S3Object s3Object;
     private ObjectMetadata meta;
     private InputStream is;
     private File file;
     private long size;
 
     public ObjectData() {
+        s3Object = null;
         meta = null;
         is = null;
         file = null;
@@ -62,5 +66,22 @@ public class ObjectData {
 
     public long getSize() {
         return size;
+    }
+
+    public S3Object getS3Object() {
+        return s3Object;
+    }
+
+    public void setS3Object(S3Object s3Object) {
+        this.s3Object = s3Object;
+    }
+
+    public void close() throws IOException {
+        if (is != null) {
+            is.close();
+        }
+        if (s3Object != null) {
+            s3Object.close();
+        }
     }
 }

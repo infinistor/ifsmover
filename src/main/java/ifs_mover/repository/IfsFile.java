@@ -22,9 +22,11 @@ import org.apache.commons.io.FilenameUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.amazonaws.services.s3.model.ObjectMetadata;
+
 import ifs_mover.Config;
-import ifs_mover.DBManager;
 import ifs_mover.Utils;
+import ifs_mover.db.MariaDB;
 
 public class IfsFile implements Repository {
     private static final Logger logger = LoggerFactory.getLogger(IfsFile.class);
@@ -84,7 +86,7 @@ public class IfsFile implements Repository {
     }
 
     @Override
-    public void makeObjectList(boolean isRerun) {
+    public void makeObjectList(boolean isRerun, boolean targetVersioning) {
         if (isRerun) {
             objectListRerun(path);
         } else {
@@ -92,12 +94,14 @@ public class IfsFile implements Repository {
         }
     }
 
+    
+
     private void objectList(String dirPath) {
         File dir = new File(dirPath);
 		File[] files = dir.listFiles();
 		String filePath = "";
 		Path path;
-		
+        
 		for (int i = 0; i < files.length; i++) {
 			filePath = files[i].getPath();
 			path = Paths.get(filePath);
@@ -133,6 +137,7 @@ public class IfsFile implements Repository {
 				}
 			}
 		}
+        // DBManager.commit();
     }
 
     private void objectListRerun(String dirPath) {
@@ -146,7 +151,8 @@ public class IfsFile implements Repository {
 			filePath = files[i].getPath();
 			path = Paths.get(filePath);
 			if (files[i].isDirectory()) { 
-				state = DBManager.stateWhenExistObject(jobId, filePath);
+				// state = DBManager.stateWhenExistObject(jobId, filePath);
+                state = Utils.getDBInstance().stateWhenExistObject(jobId, filePath);
 				if (state == -1) {
 					Utils.insertRerunMoveObject(jobId, false, "-", 0, filePath, null, null, null);
 					Utils.updateJobRerunInfo(jobId, 0);
@@ -175,12 +181,14 @@ public class IfsFile implements Repository {
 					}
 					continue;
 				}
-				state = DBManager.stateWhenExistObject(jobId, filePath);
+				// state = DBManager.stateWhenExistObject(jobId, filePath);
+                state = Utils.getDBInstance().stateWhenExistObject(jobId, filePath);
 				if (state == -1) {
 					Utils.insertRerunMoveObject(jobId, true, attr.lastModifiedTime().toString(), files[i].length(), filePath, null, null, null);
 					Utils.updateJobRerunInfo(jobId, files[i].length());
 				} else {
-					mTime = DBManager.getMtime(jobId, filePath);
+					// mTime = DBManager.getMtime(jobId, filePath);
+                    mTime = Utils.getDBInstance().getMtime(jobId, filePath);
 					if (mTime != null) {
 						if (mTime.compareTo(attr.lastModifiedTime().toString()) == 0) {
 							if (state == 3) {
@@ -201,6 +209,7 @@ public class IfsFile implements Repository {
 				}
 			}
 		}
+        // DBManager.commit();
     }
 
     @Override
@@ -269,6 +278,18 @@ public class IfsFile implements Repository {
 
     @Override
     public String getVersioningStatus() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public ObjectMetadata getMetadata(String bucket, String key, String versionId) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public ObjectData getObject(String bucket, String key, String versionId, long start) {
         // TODO Auto-generated method stub
         return null;
     }

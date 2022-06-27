@@ -16,13 +16,16 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import com.amazonaws.services.s3.internal.SkipMd5CheckStrategy;
+
+import ifs_mover.db.MariaDB;
 import ifs_mover.repository.Repository;
 
 public class Main {
@@ -52,6 +55,7 @@ public class Main {
 	private static final String MOVED = "Moved";
 	private static final String FAILED = "Failed";
 	private static final String SKIPPED = "Skipped";
+	private static final String DELETED = "Deleted";
 	private static final String FORMAT_START = "%-5s\t%-15s%22s";
 	private static final String FORMAT_START_END = "%-5s\t%-15s%22s - %s";
 	private static final String FORMAT_G = "%-10s : %,14d/ %,10.2fG";
@@ -78,7 +82,22 @@ public class Main {
 			threadCount = THREAD_COUNT;
 		}
 		
-		DBManager.init();
+		// DBManager.init();
+		// String directoryName = System.getProperty("user.dir");
+		// System.out.println("Current Working Directory is = " + directoryName);
+
+		MoverConfig config = MoverConfig.getInstance();
+		config.configure();
+		logger.info("db init ...");
+		try {
+			Utils.getDBInstance().init(config.getDbHost(), config.getDbPort(), config.getDatabase(), config.getDbUser(), config.getDbPass(), config.getDbPoolSize());
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+			System.exit(-1);
+		}
+
+		// disabling the integrity verification
+		// System.setProperty(SkipMd5CheckStrategy.DISABLE_GET_OBJECT_MD5_VALIDATION_PROPERTY,"true");
 		
 		switch (type) {
 		case CHECK:
@@ -97,12 +116,12 @@ public class Main {
 			break;
 			
 		case MOVE:
-			DBManager.createJobTable();
-			DBManager.createJob(pid, options.getType(), options.getSourceConfig(), options.getTargetConfig());
-			jobId = DBManager.getJobId(pid);
+			Utils.getDBInstance().createJob(pid, options.getType(), options.getSourceConfig(), options.getTargetConfig());
+			jobId = Utils.getDBInstance().getJobId(pid);
+
 			writeJobID(jobId, options.getSourceConfPath());
-			DBManager.createMoveObjectTable(jobId);
-			DBManager.createMoveObjectTableIndex(jobId);
+			logger.info("create jobid table ...");
+			Utils.getDBInstance().createMoveObjectTable(jobId);
 			
 			MDC.put("logFileName", "ifs_mover." + jobId + ".log");
 			logger.info("IFS_MOVER({}) MOVE START", pid);
@@ -114,18 +133,18 @@ public class Main {
 					.isRerun(false)
 					.build();
 			objectMover.init();
-			DBManager.updateJobState(jobId, type);
-			
+			Utils.getDBInstance().updateJobState(jobId, type);
 			objectMover.moveObjects();
-			DBManager.updateJobState(jobId, IMOptions.WORK_TYPE.COMPLETE);
-			DBManager.updateJobEnd(jobId);
+			Utils.getDBInstance().updateJobState(jobId, IMOptions.WORK_TYPE.COMPLETE);
+			Utils.getDBInstance().updateJobEnd(jobId);
 			logger.info(IFS_MOVER_END, pid);
 			break;
 			
 		case STOP:
 			jobId = options.getStopId();
 			logger.info("IFS_MOVER({}) STOP", pid);
-			String pidOfJob = DBManager.getProcessId(jobId);
+			// String pidOfJob = DBManager.getProcessId(jobId);
+			String pidOfJob = Utils.getDBInstance().getProcessId(jobId);
 			if (pidOfJob == null) {
 				System.out.println("Can't find pid with jobID : " + jobId);
 				logger.error("Can't find pid with jobID : {}", jobId);
@@ -136,20 +155,25 @@ public class Main {
 			try {
 				Process p = Runtime.getRuntime().exec("kill -9 " + pidOfJob);
 				p.waitFor();
-				DBManager.updateJobState(jobId, type);
+				// DBManager.updateJobState(jobId, type);
+				Utils.getDBInstance().updateJobState(jobId, type);
 			} catch (InterruptedException | IOException e) {
 				logger.error("faild stop job : {} - {}", jobId, e.getMessage());
 			}
-			DBManager.updateJobEnd(jobId);
+			// DBManager.updateJobEnd(jobId);
+			Utils.getDBInstance().updateJobEnd(jobId);
 			logger.info(IFS_MOVER_END, pid);
 			break;
 			
 		case REMOVE:
 			logger.info("IFS_MOVER({}) REMOVE", pid);
 			jobId = options.getRemoveId();
-			DBManager.dropMoveObjectTable(jobId);
-			DBManager.dropMoveObjectIndex(jobId);
-			DBManager.updateJobState(jobId, type);
+			// DBManager.dropMoveObjectIndex(jobId);
+			// DBManager.dropMoveObjectTable(jobId);
+			// DBManager.updateJobState(jobId, type);
+			Utils.getDBInstance().dropMoveObjectIndex(jobId);
+			Utils.getDBInstance().dropMoveObjectTable(jobId);
+			Utils.getDBInstance().updateJobState(jobId, type);
 			logger.info(IFS_MOVER_END, pid);
 			break;
 			
@@ -158,16 +182,16 @@ public class Main {
 
 			MDC.put("logFileName", "ifs_mover." + jobId + ".log");
 			logger.info("IFS_MOVER({}) RERUN START", pid);
-			String job_type = DBManager.getJobType(jobId);
+			String job_type = Utils.getDBInstance().getJobType(jobId);
 			if (job_type == null) {
 				logger.error("check job_id({}}) : There is no job.", jobId);
 				logger.info("IFS_MOVER({}) RERUN END", pid);
 				System.exit(-1);
 			}
 
-			DBManager.updateJobState(jobId, IMOptions.WORK_TYPE.RERUN);
+			Utils.getDBInstance().updateJobState(jobId, IMOptions.WORK_TYPE.RERUN);
 			
-			String pidOfRunJob = DBManager.getProcessId(jobId);
+			String pidOfRunJob = Utils.getDBInstance().getProcessId(jobId);
 			
 			if (pidOfRunJob != null) {
 				try {
@@ -185,16 +209,17 @@ public class Main {
 					.type(job_type)
 					.isRerun(true)
 					.build();
-			DBManager.updateJobStart(jobId);
-			DBManager.setProcessId(jobId, pid);
-			DBManager.updateJobRerun(jobId);
-			DBManager.updateObjectsRerun(jobId);
+
+			Utils.getDBInstance().updateJobStart(jobId);
+			Utils.getDBInstance().setProcessId(jobId, pid);
+			Utils.getDBInstance().updateJobRerun(jobId);
+			Utils.getDBInstance().updateObjectsRerun(jobId);
 
 			rerunObjectMover.init();
-			DBManager.updateJobState(jobId, IMOptions.WORK_TYPE.RERUN_MOVE);
+			Utils.getDBInstance().updateJobState(jobId, IMOptions.WORK_TYPE.RERUN_MOVE);
 			rerunObjectMover.moveObjects();
-			DBManager.updateJobState(jobId, IMOptions.WORK_TYPE.COMPLETE);
-			DBManager.updateJobEnd(jobId);
+			Utils.getDBInstance().updateJobState(jobId, IMOptions.WORK_TYPE.COMPLETE);
+			Utils.getDBInstance().updateJobEnd(jobId);
 			logger.info("IFS_MOVER({}) RERUN END", pid);
 			break;
 			
@@ -222,6 +247,8 @@ public class Main {
 		long failedSize;
 		long skipObjectsCount;
 		long skipObjectsSize;
+		long deleteObjectCount;
+		long deleteObjectSize;
 		String startTime;
 		String endTime;
 		String errorDesc;
@@ -230,32 +257,36 @@ public class Main {
 		double unitMove = 0.0;
 		double unitFailed = 0.0;
 		double unitSkip = 0.0;
+		double unitDelete = 0.0;
 		double percent = 0.0;
 	
-		List<Map<String, String>> list = DBManager.status();
+		// List<Map<String, String>> list = DBManager.status();
+		List<HashMap<String, Object>> list = Utils.getDBInstance().status();
 	
-		if (list.isEmpty()) {
+		if (list == null) {
 			System.out.println("No jobs were created.");
 			return;
 		}
 	
-		for (Map<String, String> info : list) {
-			jobId = info.get(DBManager.JOB_TABLE_COLUMN_JOB_ID);
-			jobState = Integer.parseInt(info.get(DBManager.JOB_TABLE_COLUMN_JOB_STATE));
-			jobType = info.get(DBManager.JOB_TABLE_COLUMN_JOB_TYPE);
-			sourcePoint = info.get(DBManager.JOB_TABLE_COLUMN_SOURCE_POINT);
-			targetPoint = info.get(DBManager.JOB_TABLE_COLUMN_TARGET_POINT);
-			objectsCount = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_OBJECTS_COUNT));
-			objectsSize = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_OBJECTS_SIZE));
-			movedObjectsCount = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_MOVED_OBJECTS_COUNT));
-			movedObjectsSize = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_MOVED_OBJECTS_SIZE));
-			failedCount = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_FAILED_COUNT));
-			failedSize = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_FAILED_SIZE));
-			skipObjectsCount = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_SKIP_OBJECTS_COUNT));
-			skipObjectsSize = Long.parseLong(info.get(DBManager.JOB_TABLE_COLUMN_SKIP_OBJECTS_SIZE));
-			startTime = info.get(DBManager.JOB_TABLE_COLUMN_START);
-			endTime = info.get(DBManager.JOB_TABLE_COLUMN_END);
-			errorDesc = info.get(DBManager.JOB_TABLE_COLUMN_ERROR_DESC);
+		for (HashMap<String, Object> info : list) {
+			jobId = String.valueOf((int) info.get(MariaDB.JOB_TABLE_COLUMN_JOB_ID));
+			jobState = (int) info.get(MariaDB.JOB_TABLE_COLUMN_JOB_STATE);
+			jobType = (String) info.get(MariaDB.JOB_TABLE_COLUMN_JOB_TYPE);
+			sourcePoint = (String) info.get(MariaDB.JOB_TABLE_COLUMN_SOURCE_POINT);
+			targetPoint = (String) info.get(MariaDB.JOB_TABLE_COLUMN_TARGET_POINT);
+			objectsCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_OBJECTS_COUNT);
+			objectsSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_OBJECTS_SIZE);
+			movedObjectsCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_MOVED_OBJECTS_COUNT);
+			movedObjectsSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_MOVED_OBJECTS_SIZE);
+			failedCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_FAILED_COUNT);
+			failedSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_FAILED_SIZE);
+			skipObjectsCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_SKIP_OBJECTS_COUNT);
+			skipObjectsSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_SKIP_OBJECTS_SIZE);
+			deleteObjectCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_DELETE_OBJECT_COUNT);
+			deleteObjectSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_DELETE_OBJECT_SIZE);
+			startTime = (String) info.get(MariaDB.JOB_TABLE_COLUMN_START);
+			endTime = (String) info.get(MariaDB.JOB_TABLE_COLUMN_END);
+			errorDesc = (String) info.get(MariaDB.JOB_TABLE_COLUMN_ERROR_DESC);
 	
 			if (jobState == STATE_REMOVE) {
 				continue;
@@ -477,6 +508,25 @@ public class Main {
 					}
 				} else {
 					System.out.println(String.format(FORMAT_B, FAILED, failedCount, failedSize));
+				}
+
+				if (deleteObjectCount > 0) {
+					unitDelete = (double)deleteObjectSize / UNIT_G;
+					if (unitDelete > 1.0) {
+						System.out.println(String.format(FORMAT_G, DELETED, deleteObjectCount, unitDelete));
+					} else {
+						unitDelete = (double)deleteObjectSize / UNIT_M;
+						if (unitDelete > 1.0) {
+							System.out.println(String.format(FORMAT_M, DELETED, deleteObjectCount, unitDelete));
+						} else {
+							unitDelete = (double)deleteObjectSize / UNIT_K;
+							if (unitDelete > 1.0) {
+								System.out.println(String.format(FORMAT_K, DELETED, deleteObjectCount, unitDelete));
+							} else {
+								System.out.println(String.format(FORMAT_B, DELETED, deleteObjectCount, deleteObjectSize));
+							}
+						}
+					}
 				}
 			} 
 			System.out.println();

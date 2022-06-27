@@ -31,9 +31,11 @@ import org.openstack4j.openstack.OSFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.amazonaws.services.s3.model.ObjectMetadata;
+
 import ifs_mover.Config;
-import ifs_mover.DBManager;
 import ifs_mover.Utils;
+import ifs_mover.db.MariaDB;
 
 public class Swift implements Repository {
     private static final Logger logger = LoggerFactory.getLogger(Swift.class);
@@ -197,7 +199,8 @@ public class Swift implements Repository {
             } else {
                 logger.error("Either domainId or donmainName must be entered.");
                 errMessage = "Either domainId or donmainName must be entered.";
-                DBManager.insertErrorJob(jobId, errMessage);
+                // DBManager.insertErrorJob(jobId, errMessage);
+                Utils.getDBInstance().insertErrorJob(jobId, errMessage);
                 return SWIFT_DOMAIN_VALUE_EMPTY;
             }
         }
@@ -212,14 +215,16 @@ public class Swift implements Repository {
             } else {
                 logger.error("Either projectId or projectName must be entered.");
                 errMessage = "Either projectId or projectName must be entered.";
-                DBManager.insertErrorJob(jobId, errMessage);
+                // DBManager.insertErrorJob(jobId, errMessage);
+                Utils.getDBInstance().insertErrorJob(jobId, errMessage);
                 return SWIFT_PROJECT_VALUE_EMPTY;
             }
         }
 
         clientV3 = getConnection();
         if (clientV3 == null) {
-            DBManager.insertErrorJob(jobId, errMessage);
+            // DBManager.insertErrorJob(jobId, errMessage);
+            Utils.getDBInstance().insertErrorJob(jobId, errMessage);
             return SWIFT_AUTH_ERROR;
         }
 
@@ -262,7 +267,8 @@ public class Swift implements Repository {
                     if (!Utils.isValidBucketName(containerName)) {
                         logger.error("Container({}) name cannot be changed to S3 bucket name({}).", container.getName(), containerName);
                         errMessage = "Container(" + container.getName() + ") name cannot be changed to S3 bucket name(" + containerName + ").";
-                        DBManager.insertErrorJob(jobId, errMessage);
+                        // DBManager.insertErrorJob(jobId, errMessage);
+                        Utils.getDBInstance().insertErrorJob(jobId, errMessage);
                         return SWIFT_INVALID_BUCKET_NAME;
                     }
                     bucketList.add(containerName);
@@ -281,7 +287,7 @@ public class Swift implements Repository {
     }
 
     @Override
-    public void makeObjectList(boolean isRerun) {
+    public void makeObjectList(boolean isRerun, boolean targetVersioning) {
         if (isRerun) {
 			objectListRerun();
 		} else {
@@ -442,7 +448,8 @@ public class Swift implements Repository {
 
         if (count == 0) {
             logger.error("Doesn't havn an object.");
-            DBManager.insertErrorJob(jobId, "Doesn't havn an object.");
+            // DBManager.insertErrorJob(jobId, "Doesn't havn an object.");
+            Utils.getDBInstance().insertErrorJob(jobId, "Doesn't havn an object.");
             System.exit(-1);
         }
     }
@@ -528,7 +535,8 @@ public class Swift implements Repository {
                             } while (object != null);
                         }
 
-                        Map<String, String> info = DBManager.infoExistObject(jobId, obj.getName());
+                        // Map<String, String> info = DBManager.infoExistObject(jobId, obj.getName());
+                        Map<String, String> info = Utils.getDBInstance().infoExistObject(jobId, obj.getName());
                         if (info.isEmpty()) {
                             Utils.insertRerunMoveObjectVersion(jobId, !obj.isDirectory(), 
                                 obj.getLastModified().toString(),
@@ -545,7 +553,7 @@ public class Swift implements Repository {
                             state = Integer.parseInt(info.get("object_state"));
                             String mTime = info.get("mtime");
                             if (state == 3 && mTime.compareTo(obj.getLastModified().toString()) == 0) {	
-                                Utils.updateRerunSkipObjectVersion(jobId, obj.getName(), "");
+                                Utils.updateRerunSkipObjectVersion(jobId, obj.getName(), "", true);
                                 Utils.updateJobRerunSkipInfo(jobId, size);
                             } else {
                                 Utils.updateToMoveObjectVersion(jobId, obj.getLastModified().toString(), size, obj.getName(), "");
@@ -642,6 +650,18 @@ public class Swift implements Repository {
 
     @Override
     public String getVersioningStatus() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public ObjectMetadata getMetadata(String bucket, String key, String versionId) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public ObjectData getObject(String bucket, String key, String versionId, long start) {
         // TODO Auto-generated method stub
         return null;
     }
