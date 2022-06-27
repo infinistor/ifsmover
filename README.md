@@ -70,6 +70,7 @@ target.conf
         secret                  Secret Access Key
         bucket                  bucket name
         prefix                  PREFIX DIR name from which to start the MOVED
+        versioning              bucket version on, off
 주) –o는 향후 개발 예정
 ```
 
@@ -150,6 +151,7 @@ target.conf
     secret:     Secret Access Key
     bucket:     Bucket Name
     prefix:     저장 될 PREFIX/DIR 이름 정보
+    versioning: source bucket이 versioning 되어 있는 경우, versioning을 off로 지정하면 source bucket versioning을 무시하고 versioning 없이 move한다. versioning을 on으로 지정하거나 생략하면 source bucket versioning 설정에 따른다.
 ```
 
 ### 설정 파일 예시
@@ -420,6 +422,19 @@ python ifs_mover -t=file -source=source.conf -target=target.conf -thread=4
 ## DB Schema
 ![](/images/heoks_ifs_mover_db_5.png)
 
+## conf 파일
+* 위치 etc/ifs-mover.conf
+```sh
+db_repository=mariadb   // [sqlite | mariadb]
+db_host=127.0.0.1       // mariadb 시 host ip
+db_name=ifsmover        // mariadb 시 database name
+db_port=3306            // mariadb 시 port
+db_user=root            // mariadb 시 user name
+db_password=1234        // mariadb 시 user password
+db_pool_size=10         // mariadb 시 db connection pool size
+```
+
+
 ## 로그 파일
 
 * 위치
@@ -441,6 +456,8 @@ python ifs_mover -t=file -source=source.conf -target=target.conf -thread=4
 * javax.xml.bind : jaxb-api : 2.3.0
 * com.github.openstack4j.core : openstack4j : 3.3
 * com.googlecode.json-simple : json-simple : 1.1.1
+* org.mariadb.jdbc : mariadb-java-client : 3.0.4
+* com.zaxxer : HikariCP : 3.4.5
 
 ## 구동 환경
 
@@ -468,14 +485,16 @@ python ifs_mover -t=file -source=source.conf -target=target.conf -thread=4
 
 ## How to Use (빌드한 경우)
 
-* IfsMover를 실행시키기 위하여 필요한 파일은 3개입니다.
+* IfsMover를 실행시키기 위하여 필요한 파일은 4개입니다.
  * target/ifs-mover.jar - 소스 빌드 후, 생성된 실행 파일	
  * script/ifs_mover - ifs-mover.jar를 실행시켜주는 스크립트
+ * script/ifs-mover.conf - db 관련 설정
  * script/ifs-mover.xml - log파일 관련 설정
 
 * 3개의 파일을 실행시킬 위치에 복사합니다.
  * target/ifs-mover.jar -> 실행시킬 위치/lib/ifs-mover.jar
  * script/ifs-mover.xml -> 실행시킬 위치/etc/ifs-mover.xml
+ * script/ifs-mover.conf -> 실행시킬 위치/etc/ifs-mover.conf
  * script/ifs_mover -> 실행시킬 위치/ifs_mover
 
 * ifs_mover의 실행 권한을 확인합니다.
