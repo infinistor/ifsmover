@@ -40,7 +40,7 @@ public class SqliteDB implements MoverDB {
 	
 	private static final int JOB_ERROR = 10;
 	private static final int CACHE_SIZE = 100000;
-	private static final int WAIT_TIMEOUT = 20000;
+	private static final int WAIT_TIMEOUT = 60000;
 	
 	private static final String SINGLE_QUOTATION = "'";
 	private static final String UNDER_OBJECTS = "_OBJECTS";
@@ -164,7 +164,6 @@ public class SqliteDB implements MoverDB {
     		config.setSynchronous(SQLiteConfig.SynchronousMode.FULL);
     		config.setJournalMode(SQLiteConfig.JournalMode.WAL);
 			config.setEncoding(SQLiteConfig.Encoding.UTF_8);
-			config.setSharedCache(true);
 			SqliteDB.con = DriverManager.getConnection(DB_FILE_URL, config.toProperties());
 		} catch (SQLException | ClassNotFoundException e) {
 			logger.error(e.getMessage());
@@ -218,7 +217,7 @@ public class SqliteDB implements MoverDB {
 			stmt.execute(CREATE_JOB_TABLE);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 	
 	@Override
@@ -236,7 +235,7 @@ public class SqliteDB implements MoverDB {
 			pstmt.executeUpdate();
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 	
 	@Override
@@ -251,7 +250,8 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
+
 		return jobId;
 	}
 
@@ -280,7 +280,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -320,7 +320,7 @@ public class SqliteDB implements MoverDB {
 			pstmt.executeUpdate();
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -332,7 +332,7 @@ public class SqliteDB implements MoverDB {
 			pstmt.executeUpdate();
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -364,7 +364,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -426,7 +426,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -442,7 +442,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -458,7 +458,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -498,7 +498,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -560,7 +560,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -585,7 +585,7 @@ public class SqliteDB implements MoverDB {
 			} 
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 		return info;
 	}
 
@@ -605,7 +605,7 @@ public class SqliteDB implements MoverDB {
 			} 
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 		return info;
 	}
 
@@ -619,7 +619,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -646,7 +646,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -663,7 +663,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -678,7 +678,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -703,7 +703,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -724,7 +724,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -740,7 +740,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 		return false;
 	}
 
@@ -763,7 +763,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -790,7 +790,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -806,7 +806,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 
 		return false;
 	}
@@ -820,7 +820,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 	
 	@Override
@@ -835,7 +835,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 
 		return maxSequence;
 	}
@@ -868,11 +868,11 @@ public class SqliteDB implements MoverDB {
 			}
 	   	} catch (SQLException e) {
 	   		logger.error(e.getMessage());
-   		}
+   		} 
 
 		if (list.size() == 0) {
 			return null;
-		}
+		} 
    
    		return list;
 	}
@@ -904,7 +904,7 @@ public class SqliteDB implements MoverDB {
 			}
 	   	} catch (SQLException e) {
 	   		logger.error(e.getMessage());
-   		}
+   		} 
    
 		if (list.size() == 0) {
 			return null;
@@ -924,7 +924,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.warn(e.getMessage());
-		}
+		} 
 		return false;
 	}
 
@@ -947,7 +947,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 	
 	@Override
@@ -957,7 +957,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(SQL_UPDATE_JOB_END + jobId);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -1000,12 +1000,12 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
-
-		try {
-			con.close();
-		} catch (SQLException e) {
-			logger.error(e.getMessage());
+		} finally {
+			try {
+				con.close();
+			} catch (SQLException e) {
+				logger.error(e.getMessage());
+			}
 		}
 		
 		return list;
@@ -1027,13 +1027,14 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
+		} finally {
+			try {
+				con.close();
+			} catch (SQLException e) {
+				logger.error(e.getMessage());
+			}
 		}
-
-		try {
-			con.close();
-		} catch (SQLException e) {
-			logger.error(e.getMessage());
-		}
+		
 		return pid;
 	}
 
@@ -1045,7 +1046,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -1056,7 +1057,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -1071,7 +1072,7 @@ public class SqliteDB implements MoverDB {
 			}
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 		return jobType;
 	}
 
@@ -1083,7 +1084,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -1094,7 +1095,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -1104,7 +1105,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(SQL_UPDATE_JOB_START + jobId);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -1115,7 +1116,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	@Override
@@ -1130,7 +1131,7 @@ public class SqliteDB implements MoverDB {
 			} 
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 		return state;
 	}
 
@@ -1146,7 +1147,7 @@ public class SqliteDB implements MoverDB {
 			} 
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 		return mtime;
 	}
 
@@ -1158,7 +1159,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 
 	public static void createMoveObjectTableIndex(String jobId) {
@@ -1168,7 +1169,7 @@ public class SqliteDB implements MoverDB {
 			stmt.executeUpdate(sql);
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
-		}
+		} 
 	}
 	
 	

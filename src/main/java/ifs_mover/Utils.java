@@ -104,260 +104,188 @@ public class Utils {
 	}
 
     public static void insertMoveObject(String jobId, boolean isFile, String mTime, long size, String path, String etag, String tag) {
-		if (getDBInstance().insertMoveObject(jobId, isFile, mTime, size, path, etag, tag)) {
-			return;
-		} else {
-			logger.error("failed insertMoveObject. path={}", path);
-		}
-        // for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.insertMoveObject(jobId, isFile, mTime, size, path, etag, tag)) {
-        //     if (MariaDB.getInstance().insertMoveObject(jobId, isFile, mTime, size, path, etag, tag)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-        // }
-        // logger.error("failed insertMoveObject. path={}", path);
+        for (int i = 0; i < RETRY_COUNT; i++) {
+            if (getDBInstance().insertMoveObject(jobId, isFile, mTime, size, path, etag, tag)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+        }
+        logger.error("failed insertMoveObject. path={}", path);
     }
 
 	public static void insertMoveObjectVersion(String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest) {
-		if (getDBInstance().insertMoveObjectVersioning(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
-			return;
-		} else {
-			logger.error("failed insertMoveObjectVersioning. path={}", path);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().insertMoveObjectVersioning(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.insertMoveObjectVersioning(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
-		// 	if (MariaDB.getInstance().insertMoveObjectVersioning(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed insertMoveObjectVersioning. path={}", path);
+		logger.error("failed insertMoveObjectVersioning. path={}", path);
 	}
 
     public static void updateJobInfo(String jobId, long size) {
-		if (getDBInstance().updateJobInfo(jobId, size)) {
-			return;
-		} else {
-			logger.error("failed updateJobInfo. size={}", size);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobInfo(jobId, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateJobInfo(jobId, size)) {
-		// 	if (MariaDB.getInstance().updateJobInfo(jobId, size)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed updateJobInfo. size={}", size);
+		logger.error("failed updateJobInfo. size={}", size);
 	}
 
     public static void insertRerunMoveObject(String jobId, boolean isFile, String mTime, long size, String path, String etag, String multipartInfo, String tag) {
-		if (getDBInstance().insertRerunMoveObject(jobId, isFile, mTime, size, path, etag, multipartInfo, tag)) {
-			return;
-		} else {
-			logger.error("failed insertRerunMoveObject. path={}", path);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().insertRerunMoveObject(jobId, isFile, mTime, size, path, etag, multipartInfo, tag)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.insertRerunMoveObject(jobId, isFile, mTime, size, path, etag, multipartInfo, tag)) {
-		// 	if (MariaDB.getInstance().insertRerunMoveObject(jobId, isFile, mTime, size, path, etag, multipartInfo, tag)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed insertRerunMoveObject. path={}", path);
+		logger.error("failed insertRerunMoveObject. path={}", path);
 	}
 
 	public static void insertRerunMoveObjectVersion(String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest) {
-		if (getDBInstance().insertRerunMoveObjectVersion(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
-			return;
-		} else {
-			logger.error("failed insertRerunMoveObjectVersion. path={}", path);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().insertRerunMoveObjectVersion(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.insertRerunMoveObjectVersion(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
-		// 	if (MariaDB.getInstance().insertRerunMoveObjectVersion(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed insertRerunMoveObjectVersion. path={}", path);
+		logger.error("failed insertRerunMoveObjectVersion. path={}", path);
 	}
 
     public static void updateJobRerunInfo(String jobId, long size) {
-		if (getDBInstance().updateJobRerunInfo(jobId, size)) {
-			return;
-		} else {
-			logger.error("failed updateJobInfo. size={}", size);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobRerunInfo(jobId, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateJobRerunInfo(jobId, size)) {
-		// 	if (MariaDB.getInstance().updateJobRerunInfo(jobId, size)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed updateJobInfo. size={}", size);
+		logger.error("failed updateJobInfo. size={}", size);
 	}
 
     public static void updateRerunSkipObject(String jobId, String path) {
-		if (getDBInstance().updateRerunSkipObject(jobId, path)) {
-			return;
-		} else {
-			logger.error("failed updateRerunSkipObject. path={}", path);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateRerunSkipObject(jobId, path)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateRerunSkipObject(jobId, path)) {
-		// 	if (MariaDB.getInstance().updateRerunSkipObject(jobId, path)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed updateRerunSkipObject. path={}", path);
+		logger.error("failed updateRerunSkipObject. path={}", path);
 	}
 
     public static void updateJobRerunSkipInfo(String jobId, long size) {
-		if (getDBInstance().updateJobRerunSkipInfo(jobId, size)) {
-			return;
-		} else {
-			logger.error("failed updateJobRerunSkipInfo. size={}", size);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobRerunSkipInfo(jobId, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateJobRerunSkipInfo(jobId, size)) {
-		// 	if (MariaDB.getInstance().updateJobRerunSkipInfo(jobId, size)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed updateJobRerunSkipInfo. size={}", size);
+		logger.error("failed updateJobRerunSkipInfo. size={}", size);
 	}
 
     public static void updateToMoveObject(String jobId, String mTime, long size, String path) {
-		if (getDBInstance().updateToMoveObject(jobId, mTime, size, path)) {
-			return;
-		} else {
-			logger.error("failed updateToMoveObject. path={}", path);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateToMoveObject(jobId, mTime, size, path)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateToMoveObject(jobId, mTime, size, path)) {
-		// 	if (MariaDB.getInstance().updateToMoveObject(jobId, mTime, size, path)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed updateToMoveObject. path={}", path);
+		logger.error("failed updateToMoveObject. path={}", path);
 	}
 
 	public static void updateObjectMove(String jobId, String path, String versionId) {
-		if (getDBInstance().updateObjectMove(jobId, path, versionId)) {
-			return;
-		} else {
-			logger.error("failed updateObjectMove. path={}", path);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateObjectMove(jobId, path, versionId)) {
+				return;
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateObjectMove(jobId, path, versionId)) {
-		// 	if (MariaDB.getInstance().updateObjectMove(jobId, path, versionId)) {
-		// 		return;
-		// 	}
-		// }
 
-		// logger.error("failed updateObjectMove. path={}", path);
+		logger.error("failed updateObjectMove. path={}", path);
 	}
 
 	public static void updateToMoveObjectVersion(String jobId, String mTime, long size, String path, String versionId) {
-		if (getDBInstance().updateToMoveObjectVersion(jobId, mTime, size, path, versionId)) {
-			return;
-		} else {
-			logger.error("failed updateToMoveObjectVersion. path={}", path);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateToMoveObjectVersion(jobId, mTime, size, path, versionId)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateToMoveObjectVersion(jobId, mTime, size, path, versionId)) {
-		// 	if (MariaDB.getInstance().updateToMoveObjectVersion(jobId, mTime, size, path, versionId)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed updateToMoveObjectVersion. path={}", path);
+		logger.error("failed updateToMoveObjectVersion. path={}", path);
 	}
 
 	public static void updateRerunSkipObjectVersion(String jobId, String path, String versionId, boolean isLatest) {
-		if (getDBInstance().updateRerunSkipObjectVersion(jobId, path, versionId, isLatest)) {
-			return;
-		} else {
-			logger.error("failed updateRerunSkipObjectVersion. path={}", path);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateRerunSkipObjectVersion(jobId, path, versionId, isLatest)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateRerunSkipObjectVersion(jobId, path, versionId)) {
-		// 	if (MariaDB.getInstance().updateRerunSkipObjectVersion(jobId, path, versionId, isLatest)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
 
-		// logger.error("failed updateRerunSkipObjectVersion. path={}", path);
+		logger.error("failed updateRerunSkipObjectVersion. path={}", path);
 	}
 
 	public static void logging(Logger log, Exception e) {
@@ -398,90 +326,66 @@ public class Utils {
 	}
 
 	public static void updateJobMoved(String jobId, long size) {
-		if (getDBInstance().updateJobMoved(jobId, size)) {
-			return;
-		} else {
-			logger.error("failed update move info to Job table(size={})", size);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobMoved(jobId, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateJobMoved(jobId, size)) {
-		// 	if (MariaDB.getInstance().updateJobMoved(jobId, size)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
-		// logger.error("failed update move info to Job table(size={})", size);
+		logger.error("failed update move info to Job table(size={})", size);
 		addMovedJobList(size);
 	}
 
 	public static void updateObjectMoveEvent(String jobId, String path, String versionId) {
-		if (getDBInstance().updateObjectMoveComplete(jobId, path, versionId)) {
-			return;
-		} else {
-			logger.error("failed update move info. {}:{}", path, versionId);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateObjectMoveComplete(jobId, path, versionId)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateObjectMoveComplete(jobId, path, versionId)) {
-		// 	if (MariaDB.getInstance().updateObjectMoveComplete(jobId, path, versionId)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
-		// logger.error("failed update move info. {}:{}", path, versionId);
+		logger.error("failed update move info. {}:{}", path, versionId);
 		addMovedObjectList(path, versionId);
 	}
 
 	public static void updateObjectVersionMoveEventFailed(String jobId, String path, String versionId, String errorCode, String errorDesc) {
-		if (getDBInstance().updateObjectMoveEventFailed(jobId, path, versionId, "", "retry failure")) {
-			return;
-		} else {
-			logger.error("failed UpdateObjectVersionMoveEventFailed. {}:{}", path, versionId);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateObjectMoveEventFailed(jobId, path, versionId, "", "retry failure")) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateObjectMoveEventFailed(jobId, path, versionId, "", "retry failure")) {
-		// 	if (MariaDB.getInstance().updateObjectMoveEventFailed(jobId, path, versionId, "", "retry failure")) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
-		// logger.error("failed UpdateObjectVersionMoveEventFailed. {}:{}", path, versionId);
+		logger.error("failed UpdateObjectVersionMoveEventFailed. {}:{}", path, versionId);
 		addFailedObjectList(path, versionId);
 	}
 
 	public static void updateJobFailedInfo(String jobId, long size) {
-		if (getDBInstance().updateJobFailedInfo(jobId, size)) {
-			return;
-		} else {
-			logger.error("failed UpdateJobFailedInfo. {}", size);
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobFailedInfo(jobId, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
 		}
-		// for (int i = 0; i < RETRY_COUNT; i++) {
-		// 	// if (DBManager.updateJobFailedInfo(jobId, size)) {
-		// 	if (MariaDB.getInstance().updateJobFailedInfo(jobId, size)) {
-		// 		return;
-		// 	} else {
-		// 		try {
-		// 			Thread.sleep(5);
-		// 		} catch (InterruptedException e) {
-		// 			logger.error(e.getMessage());
-		// 		}
-		// 	}
-		// }
-		// logger.error("failed UpdateJobFailedInfo. {}", size);
+		logger.error("failed UpdateJobFailedInfo. {}", size);
 		addFailedJobList(size);
 	}
 
