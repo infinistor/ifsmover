@@ -126,19 +126,6 @@ public class MoverConfig {
             }
         }
 
-        dbUser = properties.getProperty(DB_USER);
-        if (dbRepository == null) {
-            if (dbUser == null) {
-                throw new IllegalArgumentException(LOG_CONFIG_MUST_CONTAIN + DB_USER);
-            }
-        } else {
-            if (dbRepository.equalsIgnoreCase(MARIADB)) {
-                if (dbUser == null) {
-                    throw new IllegalArgumentException(LOG_CONFIG_MUST_CONTAIN + DB_USER);
-                }
-            }
-        }
-
         dbPass = properties.getProperty(DB_PASSWORD);
         if (dbRepository == null) {
             if (dbPass == null) {
