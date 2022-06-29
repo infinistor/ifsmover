@@ -153,7 +153,7 @@ public class SqliteDB implements MoverDB {
 		createJobTable();
 	}
 
-	public static void init() {
+	private static void init() {
 		try {
 			Class.forName(JDBC);
 			SQLiteConfig config = new SQLiteConfig();
