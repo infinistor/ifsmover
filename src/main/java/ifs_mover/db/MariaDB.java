@@ -66,7 +66,7 @@ public class MariaDB implements MoverDB {
 			+ "`start` VARCHAR(128),\n"
 			+ "`end` VARCHAR(128),\n"
 			+ "`error_desc` VARCHAR(128),\n"
-			+ "PRIMARY KEY(`job_id`))ENGINE=MyISAM DEFAULT CHARSET=utf8;";
+			+ "PRIMARY KEY(`job_id`))ENGINE=InnoDB DEFAULT CHARSET=utf8;";
 	
 	private static final String UPDATE_JOB_ID = "UPDATE JOB_";
 	private static final String INSERT_JOB_ID = "INSERT INTO JOB_";
@@ -308,7 +308,7 @@ public class MariaDB implements MoverDB {
 				+ "`error_date` TEXT,\n"
 				+ "`error_code` TEXT,\n"
 				+ "`error_desc` TEXT,\n"
-				+ "PRIMARY KEY(`sequence`), INDEX idx_path(`path`))ENGINE=MyISAM DEFAULT CHARSET=utf8;";
+				+ "PRIMARY KEY(`sequence`), INDEX idx_path(`path`))ENGINE=InnoDB DEFAULT CHARSET=utf8;";
 		try {
 			execute(query, null);
 		} catch (Exception e) {
