@@ -643,6 +643,8 @@ public class ObjectMover {
 							String s3ETag = null;
 							if (type.equalsIgnoreCase(Repository.IFS_FILE)) {
 								data = sourceRepository.getObject(sourcePath);
+								s3ETag = targetRepository.putObject(isFile, targetBucket, targetPath, data, data.getSize());
+								data.close();
 							} else {
 								if (size > 0) {
 									data = sourceRepository.getObject(sourceBucket, sourcePath, versionId, 0);
@@ -676,7 +678,11 @@ public class ObjectMover {
 									return true;
 								}
 							} else {
-								logger.info("move success : {}", path);
+								if (versionId != null && !versionId.isEmpty()) {
+									logger.info("move success : {}:{}", path, versionId);
+								} else {
+									logger.info("move success : {}", path);
+								}
 							}
 						}
 					} else {	// move dir
