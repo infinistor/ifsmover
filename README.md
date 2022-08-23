@@ -156,9 +156,9 @@ target.conf
     versioning: source bucket이 versioning 되어 있는 경우, versioning을 off로 지정하면 source bucket versioning을 무시하고 versioning 없이 move한다. versioning을 on으로 지정하거나 생략하면 source bucket versioning 설정에 따른다.
     sync:       on으로 지정하면 sync_mode에 따라 target object를 검사하여 같은 경우 skip 한다.
     sync_mode:  [etag|size|exist] 
-                etag : target에 objkey와 etag를 검사하여 같은 경우 skip
-                size : target에 objkey와 size를 검사하여 같은 경우 skip
-                exist : target에 objkey가 존재하는 경우 skip
+                etag : target에 source object가 존재하고 etag가 같은 경우 skip
+                size : target에 source object가 존재하고 size가 같은 경우 skip
+                exist : target에 source object가 존재하는 경우 skip
                 sync=on 이고, sync_mode 값이 없는 경우 etag가 기본 값으로 설정된다.
                 * 주의 - type=file인 경우에는 etag로 지정하여도 etag를 검사하지 않는다. type=file 인 경우 source 파일의 etag를 수집하지 않음.
 ```
