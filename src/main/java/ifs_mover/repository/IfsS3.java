@@ -57,6 +57,7 @@ import com.amazonaws.services.s3.model.UploadPartResult;
 import com.amazonaws.services.s3.model.VersionListing;
 
 import ifs_mover.Config;
+import ifs_mover.SyncMode;
 import ifs_mover.Utils;
 import ifs_mover.db.MariaDB;
 
@@ -68,6 +69,8 @@ public class IfsS3 implements Repository, S3 {
     private boolean isAWS;
     private boolean isSecure;
 	private boolean isVersioning;
+	private boolean isTargetSync;
+	private SyncMode targetSyncMode;
 	private String versioningStatus;
     private AmazonS3 client;
 	private String errCode;
@@ -113,6 +116,13 @@ public class IfsS3 implements Repository, S3 {
 		this.isSource = isSource;
         isAWS = config.isAWS();
         isSecure = isAWS;
+		if (!isSource) {
+			isTargetSync = config.isTargetSync();
+			targetSyncMode = config.getSyncMode();
+		} else {
+			isTargetSync = false;
+			targetSyncMode = SyncMode.UNKNOWN;
+		}
     }
 
     @Override
@@ -512,7 +522,6 @@ public class IfsS3 implements Repository, S3 {
 	private void objectList() {
 		long count = 0;
 		ExecutorService executor = Executors.newFixedThreadPool(1000);
-		
 		try {
 			if (!targetVersioning) {
 				ListObjectsRequest request = null;
@@ -1122,12 +1131,102 @@ public class IfsS3 implements Repository, S3 {
 				Utils.updateJobInfo(jobId, size);
 			}
 		}
+	}
 
+	class DBWorkerTaget implements Runnable {
+		private String jobId;
+		private String path;
+		private String versionId;
+		private long size;
+		private String etag;
+
+		DBWorkerTaget(String jobId, String path, String versionId, long size, String etag) {
+			this.jobId = jobId;
+			this.path = path;
+			this.versionId = versionId;
+			this.size = size;
+			this.etag = etag;
+		}
+
+		@Override
+		public void run() {
+			Utils.insertTargetObject(jobId, path, versionId, size, etag);
+		}
 	}
 
 	@Override
 	public String putObject(String bucketName, String key, InputStream input, ObjectMetadata metadata) {
 		PutObjectRequest putObjectRequest = new PutObjectRequest(bucketName, key, input, metadata);
 		return client.putObject(putObjectRequest).getETag();
+	}
+
+	@Override
+	public void makeTargetObjectList(boolean targetVersioning) {
+		if (config.isTargetSync()) {
+			ExecutorService executor = Executors.newFixedThreadPool(1000);
+			
+			try {
+				if (!targetVersioning) {
+					ListObjectsRequest request = null;
+					if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
+						request = new ListObjectsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
+					} else {
+						request = new ListObjectsRequest().withBucketName(config.getBucket()).withPrefix("");
+					}
+					ObjectListing result;
+					do {
+						result = client.listObjects(request);
+						for (S3ObjectSummary objectSummary : result.getObjectSummaries()) {		
+							DBWorkerTaget dbworker = new DBWorkerTaget(jobId, objectSummary.getKey(), "null", objectSummary.getSize(), objectSummary.getETag());
+							executor.execute(dbworker);
+						}
+						request.setMarker(result.getNextMarker());
+					} while (result.isTruncated());
+				} else {
+					ListVersionsRequest request = null;
+					if (config.getPrefix() != null && !config.getPrefix().isEmpty()) {
+						request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix(config.getPrefix());
+					} else {
+						request = new ListVersionsRequest().withBucketName(config.getBucket()).withPrefix("");
+					}
+					VersionListing listing = null;
+					do {
+						listing = client.listVersions(request);
+						for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
+							if (!versionSummary.isDeleteMarker()) {
+								DBWorkerTaget dbworker = new DBWorkerTaget(jobId, versionSummary.getKey(), versionSummary.getVersionId(), versionSummary.getSize(), versionSummary.getETag());
+								executor.execute(dbworker);
+							}
+						}
+						request.setKeyMarker(listing.getNextKeyMarker());
+						request.setVersionIdMarker(listing.getNextVersionIdMarker());
+					} while (listing.isTruncated());
+				}
+				executor.shutdown();
+				while (!executor.isTerminated()) {
+					try {
+						Thread.sleep(10);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+				}
+			} catch (AmazonServiceException ase) {
+				Utils.logging(logger, ase);
+				logger.error("make target object list failed. {} - {}", ase.getErrorCode(), ase.getMessage());
+			} catch (AmazonClientException ace) {
+				Utils.logging(logger, ace);
+				logger.error("make target object list failed. {}", ace.getMessage());
+			}
+		}
+	}
+
+	@Override
+	public boolean isTargetSync() {
+		return isTargetSync;
+	}
+
+	@Override
+	public SyncMode getTargetSyncMode() {
+		return targetSyncMode;
 	}
 }

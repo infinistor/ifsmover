@@ -15,6 +15,7 @@ import java.util.List;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 
 import ifs_mover.Config;
+import ifs_mover.SyncMode;
 
 public interface Repository {
     public final String IFS_FILE = "file";
@@ -49,11 +50,14 @@ public interface Repository {
     int check(String type);
     int init(String type);
     boolean isVersioning();
+    boolean isTargetSync();
+    SyncMode getTargetSyncMode();
     String getVersioningStatus();
     
     List<String> getBucketList();
     boolean createBuckets(List<String> list);
     void makeObjectList(boolean isRerun, boolean targetVersioning);
+    void makeTargetObjectList(boolean targetVersioning);
     String setPrefix(String path);
     String setTargetPrefix(String path);
 

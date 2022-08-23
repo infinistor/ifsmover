@@ -230,6 +230,22 @@ public class Utils {
 		logger.error("failed updateJobRerunSkipInfo. size={}", size);
 	}
 
+	public static void updateJobSkipInfo(String jobId, long size) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobSkipInfo(jobId, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+
+		logger.error("failed updateJobSkipInfo. size={}", size);
+	}
+
     public static void updateToMoveObject(String jobId, String mTime, long size, String path) {
 		for (int i = 0; i < RETRY_COUNT; i++) {
 			if (getDBInstance().updateToMoveObject(jobId, mTime, size, path)) {
@@ -285,7 +301,43 @@ public class Utils {
 			}
 		}
 
-		logger.error("failed updateRerunSkipObjectVersion. path={}", path);
+		logger.error("failed updateRerunSkipObjectVersion. path={}, versionId={}", path, versionId);
+	}
+
+	public static void updateSkipObject(String jobId, String path, String versionId) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateSkipObject(jobId, path, versionId)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+
+		logger.error("failed updateSkipObject. path={}, versionId={}", path, versionId);
+	}
+
+	public static void insertTargetObject(String jobId, String path, String versionId, long size, String etag) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().insertTargetObject(jobId, path, versionId, size, etag)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+
+		logger.error("failed insertTargetObject. path={}", path);
+	}
+
+	public static boolean compareObject(String jobId, String path, long size, String etg) {
+		return getDBInstance().compareObject(jobId, path, size, etg);
 	}
 
 	public static void logging(Logger log, Exception e) {

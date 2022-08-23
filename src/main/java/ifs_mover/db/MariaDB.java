@@ -81,6 +81,7 @@ public class MariaDB implements MoverDB {
 	private static final String SQL_UPDATE_JOB_OBJECTS = "UPDATE JOB SET objects_count = objects_count + 1, objects_size = objects_size + ? WHERE job_id =  ?";
 	private static final String SQL_UPDATE_JOB_FAILED_OBJECTS = "UPDATE JOB SET failed_count = failed_count + 1, failed_size = failed_size + ? WHERE job_id =  ?";
 	private static final String SQL_UPDATE_JOB_RERUN_SKIP = "UPDATE JOB SET objects_count = objects_count + 1, objects_size = objects_size + ?, skip_objects_count = skip_objects_count + 1, skip_objects_size = skip_objects_size + ? WHERE job_id = ?";
+	private static final String SQL_UPDATE_JOB_SKIP = "UPDATE JOB SET skip_objects_count = skip_objects_count + 1, skip_objects_size = skip_objects_size + ? WHERE job_id = ?";
 	private static final String SQL_UPDATE_JOB_RERUN_OBJECTS = "UPDATE JOB SET objects_count = objects_count + 1, objects_size = objects_size + ? WHERE job_id =  ?";
 	private static final String SQL_UPDATE_JOB_MOVED = "UPDATE JOB SET moved_objects_count = moved_objects_count + 1, moved_objects_size = moved_objects_size + ? WHERE job_id = ?";
 	private static final String SQL_UPDATE_JOB_DELETED = "UPDATE JOB SET delete_objects_count = delete_objects_count + 1, delete_objects_size = delete_objects_size + ? WHERE job_id =  ?";
@@ -92,6 +93,8 @@ public class MariaDB implements MoverDB {
 	private static final String SQL_INIT_JOB_RERUN = "UPDATE JOB SET objects_count = 0, objects_size = 0, moved_objects_count = 0, moved_objects_size = 0, failed_count = 0, failed_size = 0, skip_objects_count = 0, skip_objects_size = 0, delete_objects_count = 0, delete_objects_size = 0 WHERE job_id = ";
 	private static final String SQL_INIT_MOVE_OBJECT_RERUN = "_OBJECTS SET skip_check = 0";
 	private static final String SQL_INSERT_MOVE_OBJECT = "_OBJECTS (path, object_state, isfile, mtime, size, etag, multipart_info, tag) VALUES(?, 1, ?, ?, ?, ?, NULL, ?)";
+	private static final String SQL_REPLACE = "REPLACE INTO JOB_";
+	private static final String SQL_INSERT_TARGET_OBJECT = "_TARGET_OBJECTS (path, version_id, size, etag) VALUES(?, ?, ?, ?)";
 	private static final String SQL_RERUN_INSERT_MOVE_OBJECT = "_OBJECTS (path, object_state, skip_check, isfile, mtime, size, etag, multipart_info, tag) VALUES(?, 1, 1, ?, ?, ?, ?, ?, ?)";
 	private static final String SQL_INSERT_MOVE_OBJECT_VERSIONING = "_OBJECTS (path, object_state, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 	private static final String SQL_RERUN_INSERT_MOVE_OBJECT_VERSIONING = "_OBJECTS (path, object_state, skip_check, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -130,6 +133,11 @@ public class MariaDB implements MoverDB {
 	private static final String SQL_WHERE_PATH = " WHERE path = '";
 	private static final String SQL_VERSIONID_IS_NULL = "' and version_id is null";
 	private static final String SQL_VERSIONID = "' and version_id = '";
+
+	private static final String SQL_GET_TARGET = "SELECT path FROM JOB_";
+	private static final String SQL_GET_TARGET_OBJECT = "_TARGET_OBJECTS WHERE path = ?";
+	private static final String SQL_GET_TARGET_OBJECT_ETAG = "_TARGET_OBJECTS WHERE path = ? and etag = ?";
+	private static final String SQL_GET_TARGET_OBJECT_SIZE = "_TARGET_OBJECTS WHERE path = ? and size = ?";
 
     private MariaDB() {
         logger = LoggerFactory.getLogger(MariaDB.class);
@@ -1030,4 +1038,165 @@ public class MariaDB implements MoverDB {
 			logger.error(e.getMessage());
 		}
 	}
+
+	@Override
+	public void createTargetObjectTable(String jobId) {
+		String query = "CREATE TABLE IF NOT EXISTS JOB_" + jobId + "_TARGET_OBJECTS (\n"
+				+ "`path` VARBINARY(2048) NOT NULL,\n"
+				+ "`version_id` VARCHAR(64),\n"
+				+ "`size` BIGINT NOT NULL,\n"
+				+ "`etag` VARCHAR(64),\n"
+				+ "PRIMARY KEY(`path`, `version_id`))ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+		try {
+			execute(query, null);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+		}
+	}
+
+	@Override
+	public boolean compareObject(String jobId, String path, long size, String etag) {
+		List<HashMap<String, Object>> resultList = null;
+		List<Object> params = new ArrayList<Object>();
+		String sql = null;
+		
+		if (etag.lastIndexOf("-") != -1) {
+			sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT_SIZE;
+			params.add(path);
+			params.add(size);
+		} else {
+			sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT_ETAG;
+			params.add(path);
+			params.add(etag);
+		}
+
+		try {
+			resultList = select(sql, params);
+			if (resultList != null) {
+				return true;
+			}
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+		}
+		
+		return false;
+	}
+
+	@Override
+	public boolean insertTargetObject(String jobId, String path, String versionId, long size, String etag) {
+		String sql = SQL_REPLACE + jobId + SQL_INSERT_TARGET_OBJECT;
+		List<Object> params = new ArrayList<Object>();
+		params.add(path);
+		params.add(versionId);
+		params.add(size);
+		params.add(etag);
+
+		try {
+			execute(sql, params);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+			return false;
+		}
+
+		return true;
+	}
+
+	@Override
+	public boolean updateSkipObject(String jobId, String path, String versionId) {
+		String sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3, skip_check = 1";
+
+		if (versionId == null || versionId.isEmpty()) {
+			sql += " WHERE path = '" + path + SQL_VERSIONID_IS_NULL;
+		} else {
+			sql += " WHERE path = '" + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+		}
+
+		try {
+			execute(sql, null);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+			return false;
+		}
+
+		return true;
+	}
+
+	@Override
+	public boolean updateJobSkipInfo(String jobId, long size) {
+		List<Object> params = new ArrayList<Object>();
+		params.add(size);
+		params.add(jobId);
+
+		try {
+			execute(SQL_UPDATE_JOB_SKIP, params);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+			return false;
+		}
+
+		return true;
+	}
+
+	@Override
+	public boolean compareObject(String jobId, String path, String etag) {
+		List<HashMap<String, Object>> resultList = null;
+		List<Object> params = new ArrayList<Object>();
+
+		String sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT_ETAG;
+		params.add(path);
+		params.add(etag);
+
+		try {
+			resultList = select(sql, params);
+			if (resultList != null) {
+				return true;
+			}
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+		}
+		
+		return false;
+	}
+
+	@Override
+	public boolean compareObject(String jobId, String path, long size) {
+		List<HashMap<String, Object>> resultList = null;
+		List<Object> params = new ArrayList<Object>();
+
+		String sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT_SIZE;
+		params.add(path);
+		params.add(size);
+
+		try {
+			resultList = select(sql, params);
+			if (resultList != null) {
+				return true;
+			}
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+		}
+		
+		return false;
+	}
+
+	@Override
+	public boolean isExistObject(String jobId, String path) {
+		List<HashMap<String, Object>> resultList = null;
+		List<Object> params = new ArrayList<Object>();
+		
+		String sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT;
+		params.add(path);
+
+		try {
+			resultList = select(sql, params);
+			if (resultList != null) {
+				return true;
+			}
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+		}
+		
+		return false;
+	}
+
 }

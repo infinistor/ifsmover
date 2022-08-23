@@ -122,6 +122,7 @@ public class Main {
 			writeJobID(jobId, options.getSourceConfPath());
 			logger.info("create jobid table ...");
 			Utils.getDBInstance().createMoveObjectTable(jobId);
+			Utils.getDBInstance().createTargetObjectTable(jobId);
 			
 			MDC.put("logFileName", "ifs_mover." + jobId + ".log");
 			logger.info("IFS_MOVER({}) MOVE START", pid);

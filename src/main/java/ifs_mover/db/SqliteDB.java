@@ -83,6 +83,7 @@ public class SqliteDB implements MoverDB {
 	private static final String SQL_UPDATE_JOB_OBJECTS = "UPDATE JOB SET objects_count = objects_count + 1, objects_size = objects_size + ? WHERE job_id =  ?";
 	private static final String SQL_UPDATE_JOB_FAILED_OBJECTS = "UPDATE JOB SET failed_count = failed_count + 1, failed_size = failed_size + ? WHERE job_id =  ?";
 	private static final String SQL_UPDATE_JOB_RERUN_SKIP = "UPDATE JOB SET objects_count = objects_count + 1, objects_size = objects_size + ?, skip_objects_count = skip_objects_count + 1, skip_objects_size = skip_objects_size + ? WHERE job_id = ?";
+	private static final String SQL_UPDATE_JOB_SKIP = "UPDATE JOB SET skip_objects_count = skip_objects_count + 1, skip_objects_size = skip_objects_size + ? WHERE job_id = ?";
 	private static final String SQL_UPDATE_JOB_RERUN_OBJECTS = "UPDATE JOB SET objects_count = objects_count + 1, objects_size = objects_size + ? WHERE job_id =  ?";
 	private static final String SQL_UPDATE_JOB_MOVED = "UPDATE JOB SET moved_objects_count = moved_objects_count + 1, moved_objects_size = moved_objects_size + ? WHERE job_id = ?";
 	private static final String SQL_UPDATE_JOB_DELETED = "UPDATE JOB SET delete_objects_count = delete_objects_count + 1, delete_objects_size = delete_objects_size + ? WHERE job_id =  ?";
@@ -94,6 +95,8 @@ public class SqliteDB implements MoverDB {
 	private static final String SQL_INIT_JOB_RERUN = "UPDATE JOB SET objects_count = 0, objects_size = 0, moved_objects_count = 0, moved_objects_size = 0, failed_count = 0, failed_size = 0, skip_objects_count = 0, skip_objects_size = 0, delete_objects_count = 0, delete_objects_size = 0 WHERE job_id = ";
 	private static final String SQL_INIT_MOVE_OBJECT_RERUN = "_OBJECTS SET skip_check = 0";
 	private static final String SQL_INSERT_MOVE_OBJECT = "_OBJECTS (path, object_state, isfile, mtime, size, etag, multipart_info, tag) VALUES(?, 1, ?, ?, ?, ?, ?, ?)";
+	private static final String SQL_REPLACE = "REPLACE INTO JOB_";
+	private static final String SQL_INSERT_TARGET_OBJECT = "_TARGET_OBJECTS (path, version_id, size, etag) VALUES(?, ?, ?, ?)";
 	private static final String SQL_RERUN_INSERT_MOVE_OBJECT = "_OBJECTS (path, object_state, skip_check, isfile, mtime, size, etag, multipart_info, tag) VALUES(?, 1, 1, ?, ?, ?, ?, ?, ?)";
 	private static final String SQL_INSERT_MOVE_OBJECT_VERSIONING = "_OBJECTS (path, object_state, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 	private static final String SQL_RERUN_INSERT_MOVE_OBJECT_VERSIONING = "_OBJECTS (path, object_state, skip_check, isfile, mtime, size, version_id, etag, multipart_info, tag, isdelete, islatest) VALUES(?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -127,11 +130,16 @@ public class SqliteDB implements MoverDB {
 
 	private static final String SQL_OBJECT_WHERE_PATH = "_OBJECTS WHERE path = '";
 	private static final String SQL_SKIP_CHECK = "_OBJECTS SET object_state = 1, skip_check = 1, mtime = '";
-	private static final String SQL_SKIP_CHECK_WHERE_PATH = "_OBJECTS SET skip_check = 1 WHERE path = '";
+	private static final String SQL_SKIP_CHECK_WHERE_PATH = "_OBJECTS SET object_state = 3, skip_check = 1 WHERE path = '";
 	private static final String SQL_SIZE = "', size = ";
 	private static final String SQL_WHERE_PATH = " WHERE path = '";
 	private static final String SQL_VERSIONID_IS_NULL = "' and version_id is null";
 	private static final String SQL_VERSIONID = "' and version_id = '";
+
+	private static final String SQL_GET_TARGET = "SELECT path FROM JOB_";
+	private static final String SQL_GET_TARGET_OBJECT_PATH = "_TARGET_OBJECTS WHERE path ='";
+	private static final String SQL_GET_TARGET_OBJECT_SIZE = "' and size = '";
+	private static final String SQL_GET_TARGET_OBJECT_ETAG = "' and etag = '";
 
 	private SqliteDB() {
 		logger = LoggerFactory.getLogger(SqliteDB.class);
@@ -635,9 +643,9 @@ public class SqliteDB implements MoverDB {
 		}
 
 		if (versionId == null || versionId.isEmpty()) {
-			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
+			sql += " WHERE path = '" + path + SQL_VERSIONID_IS_NULL;
 		} else {
-			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+			sql += " WHERE path = '" + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
 		}
 
 		try(Statement stmt = con.createStatement()) {
@@ -1172,47 +1180,6 @@ public class SqliteDB implements MoverDB {
 		} 
 	}
 	
-	
-
-	
-
-	
-	
-
-	
-	
-	
-
-	
-	
-	
-
-	
-
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-
-	
-	
-	
-	
-	
-	
-	
-
-	
-	
-	
 	public static void updateObjectInfo(String jobId, String path, String mTime, long size) {
 		open();
 		String sql = UPDATE_JOB_ID + jobId + SQL_SET_MOVE_OBJECT_INFO + path + SINGLE_QUOTATION;
@@ -1224,13 +1191,7 @@ public class SqliteDB implements MoverDB {
 			logger.error(e.getMessage());
 		}
 	}
-	
-	
-	
-	
 
-	
-	
 	public static synchronized boolean updateJobMovedCount(String jobId, long count, long size) {
 		open();
 		try (PreparedStatement pstmt = con.prepareStatement(SQL_UPDATE_JOB_MOVED_COUNT)) {
@@ -1246,52 +1207,151 @@ public class SqliteDB implements MoverDB {
 		return false;
 	}
 
+	@Override
+	public void createTargetObjectTable(String jobId) {
+		open();
+		String sql = "CREATE TABLE IF NOT EXISTS JOB_" + jobId + "_TARGET_OBJECTS (\n"
+				+ "'path' TEXT NOT NULL,\n"
+				+ "'version_id' TEXT,\n"
+				+ "'size' INTEGER NOT NULL,\n"
+				+ "'etag' TEXT,\n"
+				+ "UNIQUE('path', 'version_id'))";
+		try(Statement stmt = con.createStatement()) {
+			stmt.executeUpdate(sql);
+		} catch (SQLException e) {
+			logger.error(e.getMessage());
+		} 
+	}
 
-	
-	
-	
+	@Override
+	public boolean compareObject(String jobId, String path, long size, String etag) {
+		open();
+		String sql = null;
+		if (etag.lastIndexOf("-") != -1) {
+			sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT_PATH + path + SQL_GET_TARGET_OBJECT_SIZE + size + SINGLE_QUOTATION;
+		} else {
+			sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT_PATH + path + SQL_GET_TARGET_OBJECT_ETAG + etag + SINGLE_QUOTATION;
+		}
 
-	// public static synchronized boolean updateObjectDeleteComplete(String jobId, String path, String versionId) {
-	// 	open();
-	// 	String sql;
-	// 	if (versionId == null || versionId.isEmpty()) {
-	// 		sql = UPDATE_JOB_ID + jobId + SQL_SET_DELETE_OBJECT;
-	// 	} else {
-	// 		sql = UPDATE_JOB_ID + jobId + SQL_SET_DELETE_OBJECT_VERSIONID;
-	// 	}
-	// 	try (PreparedStatement pstmt = con.prepareStatement(sql)) {
-	// 		pstmt.setString(1, path);
-	// 		if (versionId != null && !versionId.isEmpty()) {
-	// 			pstmt.setString(2, versionId);
-	// 		} 
-	// 		if (pstmt.executeUpdate() == 1) {
-	// 			commit();
-	// 			return true;
-	// 		}
-	// 	} catch (SQLException e) {
-	// 		logger.warn(e.getMessage());
-	// 	}
+		try (Statement stmt = con.createStatement();
+			ResultSet rs = stmt.executeQuery(sql);) {
+	   		while (rs.next()) {
+				return true;
+			}
+	   	} catch (SQLException e) {
+	   		logger.error(e.getMessage());
+   		} 
+   
+   		return false;
+	}
 
-	// 	return false;
-	// }
+	@Override
+	public boolean insertTargetObject(String jobId, String path, String versionId, long size, String etag) {
+		open();
+		String sql = SQL_REPLACE + jobId + SQL_INSERT_TARGET_OBJECT;
+		try (PreparedStatement pstmt = con.prepareStatement(sql)) {
+			pstmt.setString(1, path);
+			pstmt.setString(2, versionId);
+			pstmt.setLong(3, size);
+			pstmt.setString(4, etag);
 
-	
-	
-	
-	
-	
+			if (pstmt.executeUpdate() == 1) {
+				return true;
+			}
+		} catch (SQLException e) {
+			logger.warn(e.getMessage());
+		} 
 
-	
+		return false;
+	}
 
-	
+	@Override
+	public boolean updateSkipObject(String jobId, String path, String versionId) {
+		open();
+		String sql = null;
 
-	
-	
-	
+		if (versionId == null || versionId.isEmpty()) {
+			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
+		} else {
+			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+		}
 
-	
+		try(Statement stmt = con.createStatement()) {
+			if (stmt.executeUpdate(sql) == 1) {
+				return true;
+			}
+		} catch (SQLException e) {
+			logger.warn(e.getMessage());
+		} 
 
-	
+		return false;
+	}
 
-	
+	@Override
+	public boolean updateJobSkipInfo(String jobId, long size) {
+		open();
+		try(PreparedStatement pstmt = con.prepareStatement(SQL_UPDATE_JOB_SKIP)) {
+			pstmt.setLong(1, size);
+			pstmt.setString(2, jobId);
+			if (pstmt.executeUpdate() == 1) {
+				return true;
+			}
+		} catch (SQLException e) {
+			logger.warn(e.getMessage());
+		} 
+
+		return false;
+	}
+
+	@Override
+	public boolean compareObject(String jobId, String path, String etag) {
+		open();
+		String sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT_PATH + path + SQL_GET_TARGET_OBJECT_ETAG + etag + SINGLE_QUOTATION;
+
+		try (Statement stmt = con.createStatement();
+			ResultSet rs = stmt.executeQuery(sql);) {
+	   		while (rs.next()) {
+				return true;
+			}
+	   	} catch (SQLException e) {
+	   		logger.error(e.getMessage());
+   		} 
+   
+   		return false;
+	}
+
+	@Override
+	public boolean compareObject(String jobId, String path, long size) {
+		open();
+		String sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT_PATH + path + SQL_GET_TARGET_OBJECT_SIZE + size + SINGLE_QUOTATION;
+
+		try (Statement stmt = con.createStatement();
+			ResultSet rs = stmt.executeQuery(sql);) {
+	   		while (rs.next()) {
+				return true;
+			}
+	   	} catch (SQLException e) {
+	   		logger.error(e.getMessage());
+   		} 
+   
+   		return false;
+	}
+
+	@Override
+	public boolean isExistObject(String jobId, String path) {
+		open();
+		String sql = SQL_GET_TARGET + jobId + SQL_GET_TARGET_OBJECT_PATH + path + SINGLE_QUOTATION;
+
+		try (Statement stmt = con.createStatement();
+			ResultSet rs = stmt.executeQuery(sql);) {
+	   		while (rs.next()) {
+				return true;
+			}
+	   	} catch (SQLException e) {
+	   		logger.error(e.getMessage());
+   		} 
+   
+   		return false;
+	}
+
 }

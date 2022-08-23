@@ -119,6 +119,8 @@ public class ObjectMover {
 		sourceRepository.setConfig(sourceConfig, true);
 		targetRepository = factory.getTargetRepository(jobId);
 		targetRepository.setConfig(targetConfig, false);
+
+		logger.info("thread count: {}", threadCount);
 	}
 	
 	public void check() {
@@ -187,12 +189,21 @@ public class ObjectMover {
 		}
 
 		logger.info("isVersioning : {}, targetVersioning : {}", isVersioning, targetVersioning);
+		if (targetConfig.isTargetSync()) {
+			if (targetConfig.getSyncMode() == SyncMode.ETAG) {
+				logger.info("target sync mode : check etag.");
+			} else if (targetConfig.getSyncMode() == SyncMode.SIZE) {
+				logger.info("target sync mode : check size.");
+			} else if (targetConfig.getSyncMode() == SyncMode.EXIST) {
+				logger.info("target sync mode : check exist.");
+			}
+		}
 
 		sourceRepository.makeObjectList(isRerun, targetVersioning);
 		if (isRerun) {
-			// DBManager.deleteCheckObjects(jobId);
 			Utils.getDBInstance().deleteCheckObjects(jobId);
 		}
+		targetRepository.makeTargetObjectList(targetVersioning);
 	}
 
 	public void moveObjects() {		
@@ -349,7 +360,7 @@ public class ObjectMover {
 		long sequence = 0;
 		long limit = 100;
 
-		ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+		ExecutorService executor = Executors.newCachedThreadPool(); // .newFixedThreadPool(threadCount);
 		List<HashMap<String, Object>> list = null;
 		List<HashMap<String, Object>> jobList = null;
 
@@ -440,6 +451,8 @@ public class ObjectMover {
 
 		private boolean isFault;
 		private boolean isDoneLatest;
+
+		private boolean isTargetSkip;
 		
 		public Mover(boolean isRerun, List<HashMap<String, Object>> list) {
 			this.isRerun = isRerun;
@@ -545,6 +558,57 @@ public class ObjectMover {
 					}
 					Utils.getDBInstance().updateDeleteMarker(jobId, path, versionId);
 				} else {
+					// Check if it is the same as target object
+					if (targetRepository.isTargetSync()) {
+						if (targetRepository.getTargetSyncMode() == SyncMode.ETAG && type.equalsIgnoreCase(Repository.S3)) { // check ETAG
+							if (Utils.getDBInstance().compareObject(jobId, path, etag)) {
+								logger.warn("Ignored because it is the same as the target object. path : {}, versionId : {}, size : {}, etag : {}", path, versionId, size, etag);
+								Utils.updateSkipObject(jobId, path, versionId);
+								Utils.updateJobSkipInfo(jobId, size);
+								this.isTargetSkip = true;
+								return true;
+							}
+						} else if (targetRepository.getTargetSyncMode() == SyncMode.SIZE) {	// check SIZE
+							if (type.equalsIgnoreCase(Repository.S3)) {
+								if (Utils.getDBInstance().compareObject(jobId, path, size)) {
+									logger.warn("Ignored because it is the same as the target object. path : {}, versionId : {}, size : {}, etag : {}", path, versionId, size, etag);
+									Utils.updateSkipObject(jobId, path, versionId);
+									Utils.updateJobSkipInfo(jobId, size);
+									this.isTargetSkip = true;
+									return true;
+								}
+							} else if (type.equalsIgnoreCase(Repository.IFS_FILE)) {
+								logger.debug("path : {}", targetPath);
+								if (Utils.getDBInstance().compareObject(jobId, targetPath, size)) {
+									logger.warn("Ignored because it is the same as the target object. path : {}, versionId : {}, size : {}, etag : {}", path, versionId, size, etag);
+									Utils.updateSkipObject(jobId, path, versionId);
+									Utils.updateJobSkipInfo(jobId, size);
+									this.isTargetSkip = true;
+									return true;
+								}
+							}
+						} else if (targetRepository.getTargetSyncMode() == SyncMode.EXIST) { // check EXIST
+							if (type.equalsIgnoreCase(Repository.S3)) {
+								if (Utils.getDBInstance().isExistObject(jobId, path)) {
+									logger.warn("Ignored because it is the same as the target object. path : {}, versionId : {}, size : {}, etag : {}", path, versionId, size, etag);
+									Utils.updateSkipObject(jobId, path, versionId);
+									Utils.updateJobSkipInfo(jobId, size);
+									this.isTargetSkip = true;
+									return true;
+								}
+							} else if (type.equalsIgnoreCase(Repository.IFS_FILE)) {
+								logger.debug("path : {}", targetPath);
+								if (Utils.getDBInstance().isExistObject(jobId, targetPath)) {
+									logger.warn("Ignored because it is the same as the target object. path : {}, versionId : {}, size : {}, etag : {}", path, versionId, size, etag);
+									Utils.updateSkipObject(jobId, path, versionId);
+									Utils.updateJobSkipInfo(jobId, size);
+									this.isTargetSkip = true;
+									return true;
+								}
+							}
+						}
+					}
+
 					if (isFile) {
 						// check rerun delete
 						if (isRerun && !skipCheck) {
@@ -879,7 +943,11 @@ public class ObjectMover {
 						continue;
 					}
 
+					isTargetSkip = false;
 					retryMoveObject(path, isDelete, isFile, versionId, etag, multipartInfo, tag, size, skipCheck);
+					if (isTargetSkip) {
+						continue;
+					}
 
 					if (isRerun && !skipCheck) {
 						continue;
@@ -898,8 +966,10 @@ public class ObjectMover {
 
 				if (!isDoneLatest) {
 					// Latest should be performed at the end.
+					isTargetSkip = false;
 					retryMoveObject(latestPath, latestIsDelete, latestIsFile, latestVersionId, latestETag, latestMultipartInfo, latestTag, size, latestSkipCheck);
-					if (!(isRerun && !skipCheck)) {
+
+					if (!isTargetSkip && !(isRerun && !skipCheck)) {
 						if (isFault) {
 							logger.error("move failed : {}", latestPath);
 							Utils.updateObjectVersionMoveEventFailed(jobId, latestPath, latestVersionId, "", "retry failure");

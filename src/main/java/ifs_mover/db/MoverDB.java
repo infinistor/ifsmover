@@ -55,19 +55,23 @@ public interface MoverDB {
     public void createJob(String pid, String select, Config sourceConfig, Config targetConfig);
     public String getJobId(String pid);
     public void createMoveObjectTable(String jobId);
+    public void createTargetObjectTable(String jobId);
     public void updateJobState(String jobId, IMOptions.WORK_TYPE type);
     public void insertErrorJob(String jobId, String msg);
     public boolean insertMoveObject(String jobId, boolean isFile, String mTime, long size, String path, String etag, String tag);
     public boolean insertMoveObjectVersioning(String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest);
+    public boolean insertTargetObject(String jobId, String path, String versionId, long size, String etag);
     public boolean updateJobInfo(String jobId, long size);
     public boolean updateJobRerunInfo(String jobId, long size);
     public boolean insertRerunMoveObject(String jobId, boolean isFile, String mTime, long size, String path, String etag, String multipartInfo, String tag);
     public boolean insertRerunMoveObjectVersion(String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest);
     public Map<String, String> infoExistObjectVersion(String jobId, String path, String versionId);
     public Map<String, String> infoExistObject(String jobId, String path);
+    public boolean updateSkipObject(String jobId, String path, String versionId);
     public boolean updateRerunSkipObject(String jobId, String path);
     public boolean updateRerunSkipObjectVersion(String jobId, String path, String versionId, boolean isLatest);
     public boolean updateJobRerunSkipInfo(String jobId, long size);
+    public boolean updateJobSkipInfo(String jobId, long size);
     public boolean updateToMoveObject(String jobId, String mTime, long size, String path);
     public boolean updateObjectMove(String jobId, String path, String versionId);
     public boolean updateToMoveObjectVersion(String jobId, String mTime, long size, String path, String versionId);
@@ -94,4 +98,8 @@ public interface MoverDB {
     public int stateWhenExistObject(String jobId, String path);
     public String getMtime(String jobId, String path);
     public void updateDeleteMarker(String jobId, String path, String versionId);
+    public boolean compareObject(String jobId, String path, long size, String etag);
+    public boolean compareObject(String jobId, String path, String etag);
+    public boolean compareObject(String jobId, String path, long size);
+    public boolean isExistObject(String jobId, String path);
 }

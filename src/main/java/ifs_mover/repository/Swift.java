@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 
 import ifs_mover.Config;
+import ifs_mover.SyncMode;
 import ifs_mover.Utils;
 import ifs_mover.db.MariaDB;
 
@@ -664,5 +665,23 @@ public class Swift implements Repository {
     public ObjectData getObject(String bucket, String key, String versionId, long start) {
         // TODO Auto-generated method stub
         return null;
+    }
+
+    @Override
+    public void makeTargetObjectList(boolean targetVersioning) {
+        // TODO Auto-generated method stub
+        
+    }
+
+    @Override
+    public boolean isTargetSync() {
+        // TODO Auto-generated method stub
+        return false;
+    }
+
+    @Override
+    public SyncMode getTargetSyncMode() {
+        // TODO Auto-generated method stub
+        return SyncMode.UNKNOWN;
     }
 }

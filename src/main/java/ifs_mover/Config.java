@@ -36,6 +36,8 @@ public class Config {
 	private String prefix;
 	private String moveSize;
 	private String versioning;
+	private String sync;
+	private String syncCheck;
 	private String type;
 	
 	// for openstack swift
@@ -49,6 +51,8 @@ public class Config {
 	private String container;
 
 	private boolean isAWS;
+	private boolean isTargetSync;
+	private SyncMode syncMode; 
 
 	private final String MOUNT_POINT = "mountpoint";
 	private final String END_POINT = "endpoint";
@@ -59,6 +63,8 @@ public class Config {
 	private final String PREFIX = "prefix";
 	private final String MOVE_SIZE = "move_size";
 	private final String VERSIONING = "versioning";	// ON OFF
+	private final String TARGET_SYNC = "sync";
+	private final String TARGET_SYNC_MODE = "sync_mode";
 
 	// for openstack swift support
 	private final String USER_NAME = "user_name";
@@ -71,6 +77,10 @@ public class Config {
 	private final String CONTAINER = "container";
 
 	private final String PROTOCOL = "http";
+	private final String ON = "on";
+	private final String SYNC_MODE_ETAG = "etag";
+	private final String SYNC_MODE_SIZE = "size";
+	private final String SYNC_MODE_EXIST = "exist";
 
 	public Config() {
 
@@ -107,6 +117,8 @@ public class Config {
 		projectName = properties.getProperty(PROJECT_NAME);
 		container = properties.getProperty(CONTAINER);
 		versioning = properties.getProperty(VERSIONING);
+		sync = properties.getProperty(TARGET_SYNC);
+		syncCheck = properties.getProperty(TARGET_SYNC_MODE);
 
 		if (mountPoint != null && !mountPoint.isEmpty() && !mountPoint.endsWith("/")) {
 			mountPoint += "/";
@@ -140,10 +152,48 @@ public class Config {
 		} else {
 			isAWS = false;
 		}
+
+		if (sync != null && !sync.isEmpty()) {
+			sync = sync.toLowerCase();
+			if (sync.compareTo(ON) == 0) {
+				isTargetSync = true;
+			} else {
+				isTargetSync = false;
+			}
+		} else {
+			isTargetSync = false;
+		}
+
+		if (isTargetSync) {
+			if (syncCheck != null && !syncCheck.isEmpty()) {
+				syncCheck = syncCheck.toLowerCase();
+				if (syncCheck.compareTo(SYNC_MODE_ETAG) == 0) {
+					syncMode = SyncMode.ETAG;
+				} else if (syncCheck.compareTo(SYNC_MODE_SIZE) == 0) {
+					syncMode = SyncMode.SIZE;
+				} else if (syncCheck.compareTo(SYNC_MODE_EXIST) == 0) {
+					syncMode = SyncMode.EXIST;
+				} else {
+					syncMode = SyncMode.ETAG;
+				}
+			} else {
+				syncMode = SyncMode.ETAG;
+			}
+		} else {
+			syncMode = SyncMode.UNKNOWN;
+		}
 	}
 
 	public boolean isAWS() {
 		return isAWS;
+	}
+
+	public boolean isTargetSync() {
+		return isTargetSync;
+	}
+
+	public SyncMode getSyncMode() {
+		return syncMode;
 	}
 
 	public String getMountPoint() {

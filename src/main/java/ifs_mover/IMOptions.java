@@ -307,6 +307,9 @@ public class IMOptions {
 		System.out.println("\t" + String.format("%-20s\t%s", "secret", "Secret Access Key"));
 		System.out.println("\t" + String.format("%-20s\t%s", "bucket", "bucket name"));
 		System.out.println("\t" + String.format("%-20s\t%s", "prefix", "PREFIX DIR name from which to start the MOVED"));
+		System.out.println("\t" + String.format("%-20s\t%s", "versioning", "bucket versioning on, off"));
+		System.out.println("\t" + String.format("%-20s\t%s", "sync", "target object sync on, off"));
+		System.out.println("\t" + String.format("%-20s\t%s", "sync_mode", "target object sync mode, [etag|size|exist]"));
 		
 		System.exit(-1);
 	}
