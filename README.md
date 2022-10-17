@@ -39,14 +39,17 @@ Rerun
                                 performed JOB information
         -source=source.conf     source configuration file path
         -target=target.conf     target configuration file path
-        -thread=                     thread count
+        -thread=                thread count
 Check
         -check                  check source and target configuration
         -t=file|s3|swift        source type, FILE(NAS) or S3 or SWIFT
         -source=source.conf     source configuration file path
         -target=target.conf     target configuration file path
 Status Job
-        -status                 show job progress
+        -status                 show all jobs progress
+        -jobId=jobid            show job progress for jobid
+        -srcbucket=bucket       show job progress for srcbucket
+        -dstbucket=bucket       show job progress for dstbucket
 source.conf
         mountpoint              information mounted on the server to be performed
                                 mountpoint=/ means move all files
@@ -108,7 +111,11 @@ ifs_mover -rerun=1 -source=source.conf -target=target.conf -thread=4
 
 ### 전체 이관 작업의 상태정보 조회
 ```sh
-ifs_mover -status
+ifs_mover -status               // 모든 Job에 대한 작업 상태 정보 조회
+ifs_mover -status -jobid=3      // jobId = 3인 Job에 대한 작업 상태 정보 조회
+ifs_mover -status -srcbucket=bucket-1   // source bucket 이름에 "bucket-1" 포함된 Job에 대한 작업 상태 정보 조회
+ifs_mover -status -dstbucket=bucket-1   // target bucket 이름에 "bucket-1" 포함된 Job에 대한 작업 상태 정보 조회
+ifs_mover -status -srcbucket=bucket-1 -dstbucket=bucket-2   // source bucket 이름에 "bucket-1" 포함되고, target bucket 이름에 "bucket-2"가 포함된 Job에 대한 작업 상태 정보 조회
 ```
 
 

@@ -87,6 +87,10 @@ public interface MoverDB {
     public void deleteObjects(String jobId, String path, String versionId);
     public void updateJobEnd(String jobId);
     public List<HashMap<String, Object>> status();
+    public List<HashMap<String, Object>> status(String jobId);
+    public List<HashMap<String, Object>> status(String srcbucket, String destbucket);
+    public List<HashMap<String, Object>> statusSrcBucket(String bucket);
+    public List<HashMap<String, Object>> statusDstBucket(String bucket);
     public String getProcessId(String jobId);
     public void dropMoveObjectIndex(String jobId);
     public void dropMoveObjectTable(String jobId);

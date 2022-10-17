@@ -77,7 +77,11 @@ public class MariaDB implements MoverDB {
 	private static final String SQL_UPDATE_JOB_STATE_RERUN = "UPDATE JOB SET job_state = 7 WHERE job_id = ?";
 	private static final String SQL_UPDATE_JOB_STATE_RERUN_MOVE = "UPDATE JOB SET job_state = 8 WHERE job_id = ?";
 	private static final String SQL_SELECT_JOB_STATUS = "SELECT job_id, job_state, job_type, source_point, target_point, objects_count, objects_size, moved_objects_count, moved_objects_size, failed_count, failed_size, skip_objects_count, skip_objects_size, delete_objects_count, delete_objects_size, start, end, error_desc FROM JOB ORDER BY job_id";
-	
+	private static final String SQL_SELECT_JOB_STATUS_WITH_JOBID = "SELECT job_id, job_state, job_type, source_point, target_point, objects_count, objects_size, moved_objects_count, moved_objects_size, failed_count, failed_size, skip_objects_count, skip_objects_size, delete_objects_count, delete_objects_size, start, end, error_desc FROM JOB WHERE job_id = ?";
+	private static final String SQL_SELECT_JOB_STATUS_WITH_SRC_BUCKET = "SELECT job_id, job_state, job_type, source_point, target_point, objects_count, objects_size, moved_objects_count, moved_objects_size, failed_count, failed_size, skip_objects_count, skip_objects_size, delete_objects_count, delete_objects_size, start, end, error_desc FROM JOB WHERE source_point LIKE ? ORDER BY job_id";
+	private static final String SQL_SELECT_JOB_STATUS_WITH_DST_BUCKET = "SELECT job_id, job_state, job_type, source_point, target_point, objects_count, objects_size, moved_objects_count, moved_objects_size, failed_count, failed_size, skip_objects_count, skip_objects_size, delete_objects_count, delete_objects_size, start, end, error_desc FROM JOB WHERE target_point LIKE ? ORDER BY job_id";
+	private static final String SQL_SELECT_JOB_STATUS_WITH_SRC_DST_BUCKET = "SELECT job_id, job_state, job_type, source_point, target_point, objects_count, objects_size, moved_objects_count, moved_objects_size, failed_count, failed_size, skip_objects_count, skip_objects_size, delete_objects_count, delete_objects_size, start, end, error_desc FROM JOB WHERE source_point LIKE ? AND target_point LIKE ? ORDER BY job_id";
+
 	private static final String SQL_UPDATE_JOB_OBJECTS = "UPDATE JOB SET objects_count = objects_count + 1, objects_size = objects_size + ? WHERE job_id =  ?";
 	private static final String SQL_UPDATE_JOB_FAILED_OBJECTS = "UPDATE JOB SET failed_count = failed_count + 1, failed_size = failed_size + ? WHERE job_id =  ?";
 	private static final String SQL_UPDATE_JOB_RERUN_SKIP = "UPDATE JOB SET objects_count = objects_count + 1, objects_size = objects_size + ?, skip_objects_count = skip_objects_count + 1, skip_objects_size = skip_objects_size + ? WHERE job_id = ?";
@@ -128,11 +132,19 @@ public class MariaDB implements MoverDB {
 
 	private static final String SQL_OBJECT_WHERE_PATH = "_OBJECTS WHERE path = '";
 	private static final String SQL_SKIP_CHECK = "_OBJECTS SET object_state = 1, skip_check = 1, mtime = '";
-	private static final String SQL_SKIP_CHECK_WHERE_PATH = "_OBJECTS SET skip_check = 1 WHERE path = '";
+	// private static final String SQL_SKIP_CHECK_WHERE_PATH = "_OBJECTS SET skip_check = 1 WHERE path = '";
 	private static final String SQL_SIZE = "', size = ";
-	private static final String SQL_WHERE_PATH = " WHERE path = '";
+	// private static final String SQL_WHERE_PATH = " WHERE path = '";
 	private static final String SQL_VERSIONID_IS_NULL = "' and version_id is null";
 	private static final String SQL_VERSIONID = "' and version_id = '";
+
+	private static final String SQL_OBJECT_WHERE_PATH_ONLY = "_OBJECTS WHERE path = ?";
+	private static final String SQL_SKIP_CHECK_WHERE_PATH = "_OBJECTS SET skip_check = 1 WHERE path = ?";
+	private static final String SQL_OBJECT_WHERE_PATH_WITH_VERSIONID = "_OBJECTS WHERE path = ? and version_id = ?";
+	private static final String SQL_OBJECT_WHERE_PATH_WITH_VERSIONID_NULL = "_OBJECTS WHERE path = ? and version_id is null";
+	private static final String SQL_WHERE_PATH = " WHERE path = ?";
+	private static final String SQL_WHERE_PATH_WITH_VERSIONID_IS_NULL = " WHERE path = ? and version_id is null";
+	private static final String SQL_WHERE_PATH_WITH_VERSIONID = " WHERE path = ? and version_id = ?";
 
 	private static final String SQL_GET_TARGET = "SELECT path FROM JOB_";
 	private static final String SQL_GET_TARGET_OBJECT = "_TARGET_OBJECTS WHERE path = ?";
@@ -563,16 +575,25 @@ public class MariaDB implements MoverDB {
 	public Map<String, String> infoExistObjectVersion(String jobId, String path, String versionId) {
 		Map<String, String> info = new HashMap<String, String>();	
 		String sql;
+		List<Object> params = new ArrayList<Object>();
 		if (versionId == null || versionId.isEmpty()) {
-			sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
+			sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH_WITH_VERSIONID_NULL;
+			params.add(path);
 		} else {
-			sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+			sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH_WITH_VERSIONID;
+			params.add(path);
+			params.add(versionId);
 		}
+		// if (versionId == null || versionId.isEmpty()) {
+		// 	sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
+		// } else {
+		// 	sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+		// }
 
 		List<HashMap<String, Object>> resultList = null;
 
 		try {
-			resultList = select(sql, null);
+			resultList = select(sql, params);
 			if (resultList != null) {
 				info.put(MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE, String.valueOf((int) resultList.get(0).get(MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE)));
 				info.put(MOVE_OBJECTS_TABLE_COLUMN_MTIME, (String) resultList.get(0).get(MOVE_OBJECTS_TABLE_COLUMN_MTIME));
@@ -588,13 +609,16 @@ public class MariaDB implements MoverDB {
 	@Override
 	public Map<String, String> infoExistObject(String jobId, String path) {
 		Map<String, String> info = new HashMap<String, String>();	
+		List<Object> params = new ArrayList<Object>();
 		String sql;
-		sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH + path + SINGLE_QUOTATION;
+		// sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH + path + SINGLE_QUOTATION;
+		sql = SQL_GET_OBJECT_INFO + jobId + SQL_OBJECT_WHERE_PATH_ONLY;
+		params.add(path);
 
 		List<HashMap<String, Object>> resultList = null;
 
 		try {
-			resultList = select(sql, null);
+			resultList = select(sql, params);
 			if (resultList != null) {
 				info.put(MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE, String.valueOf((int)resultList.get(0).get(MOVE_OBJECTS_TABLE_COLUMN_OBJECT_STATE)));
 				info.put(MOVE_OBJECTS_TABLE_COLUMN_MTIME, (String)resultList.get(0).get(MOVE_OBJECTS_TABLE_COLUMN_MTIME));
@@ -609,9 +633,11 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public boolean updateRerunSkipObject(String jobId, String path) {
-		String sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH + path + SINGLE_QUOTATION;
+		List<Object> params = new ArrayList<Object>();
+		String sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK_WHERE_PATH;
+		params.add(path);
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 			return false;
@@ -622,6 +648,7 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public boolean updateRerunSkipObjectVersion(String jobId, String path, String versionId, boolean isLatest) {
+		List<Object> params = new ArrayList<Object>();
 		String sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET skip_check = 1, islatest = ";
 		if (isLatest) {
 			sql += "1";
@@ -630,13 +657,18 @@ public class MariaDB implements MoverDB {
 		}
 
 		if (versionId == null || versionId.isEmpty()) {
-			sql += " WHERE path = '" + path + SQL_VERSIONID_IS_NULL;
+			sql += SQL_WHERE_PATH_WITH_VERSIONID_IS_NULL;
+			params.add(path);
+			// sql += " WHERE path = '" + path + SQL_VERSIONID_IS_NULL;
 		} else {
-			sql += " WHERE path = '" + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+			sql += SQL_WHERE_PATH_WITH_VERSIONID;
+			params.add(path);
+			params.add(versionId);
+			// sql += " WHERE path = '" + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
 		}
 
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 			return false;
@@ -664,9 +696,12 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public boolean updateToMoveObject(String jobId, String mTime, long size, String path) {
-		String sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SINGLE_QUOTATION;
+		List<Object> params = new ArrayList<Object>();
+		String sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH;
+		params.add(path);
+		// String sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SINGLE_QUOTATION;
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 			return false;
@@ -677,15 +712,24 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public boolean updateObjectMove(String jobId, String path, String versionId) {		
+		List<Object> params = new ArrayList<Object>();
 		String sql;
 		if (versionId != null && !versionId.isEmpty()) {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2 WHERE path = '" + path + "' and version_id = '" + versionId + SINGLE_QUOTATION;
+			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2" + SQL_WHERE_PATH_WITH_VERSIONID;
+			params.add(path);
+			params.add(versionId);
 		} else {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2 WHERE path = '" + path + "' and version_id is null";
+			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2" + SQL_WHERE_PATH_WITH_VERSIONID_IS_NULL;
+			params.add(path);
 		}
+		// if (versionId != null && !versionId.isEmpty()) {
+		// 	sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2 WHERE path = '" + path + "' and version_id = '" + versionId + SINGLE_QUOTATION;
+		// } else {
+		// 	sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 2 WHERE path = '" + path + "' and version_id is null";
+		// }
 
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 			return false;
@@ -696,15 +740,24 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public boolean updateToMoveObjectVersion(String jobId, String mTime, long size, String path, String versionId) {
+		List<Object> params = new ArrayList<Object>();
 		String sql;
 		if (versionId == null || versionId.isEmpty()) { 
-			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
+			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH_WITH_VERSIONID_IS_NULL;
+			params.add(path);
 		} else {
-			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+			sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH_WITH_VERSIONID;
+			params.add(path);
+			params.add(versionId);
 		}
+		// if (versionId == null || versionId.isEmpty()) { 
+		// 	sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SQL_VERSIONID_IS_NULL;
+		// } else {
+		// 	sql = UPDATE_JOB_ID + jobId + SQL_SKIP_CHECK + mTime + SQL_SIZE + size + SQL_WHERE_PATH + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+		// }
 
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 			return false;
@@ -731,15 +784,24 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public boolean updateObjectMoveComplete(String jobId, String path, String versionId) {
+		List<Object> params = new ArrayList<Object>();
 		String sql = UPDATE_JOB_ID + jobId;
 		if (versionId != null && !versionId.isEmpty()) {
-			sql += "_OBJECTS SET object_state = 3 WHERE path ='" + path + "' and version_id = '" + versionId + SINGLE_QUOTATION;
+			sql += "_OBJECTS SET object_state = 3" + SQL_WHERE_PATH_WITH_VERSIONID;
+			params.add(path);
+			params.add(versionId);
 		} else {
-			sql += "_OBJECTS SET object_state = 3 WHERE path ='" + path + "' and version_id is null";
+			sql += "_OBJECTS SET object_state = 3" + SQL_WHERE_PATH_WITH_VERSIONID_IS_NULL;
+			params.add(path);
 		}
+		// if (versionId != null && !versionId.isEmpty()) {
+		// 	sql += "_OBJECTS SET object_state = 3 WHERE path ='" + path + "' and version_id = '" + versionId + SINGLE_QUOTATION;
+		// } else {
+		// 	sql += "_OBJECTS SET object_state = 3 WHERE path ='" + path + "' and version_id is null";
+		// }
 
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 			return false;
@@ -750,15 +812,19 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public boolean updateObjectMoveEventFailed(String jobId, String path, String versionId, String errorCode, String errorMessage) {
+		List<Object> params = new ArrayList<Object>();
 		String sql;
 		if (versionId != null && !versionId.isEmpty()) {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 4, error_date = now(), error_code ='" + errorCode + "', error_desc = '" + errorMessage + "' WHERE path = '" + path + "' and version_id = '" + versionId + SINGLE_QUOTATION;
+			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 4, error_date = now(), error_code ='" + errorCode + "', error_desc = '" + errorMessage + "'" + SQL_WHERE_PATH_WITH_VERSIONID;
+			params.add(path);
+			params.add(versionId);
 		} else {
-			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 4, error_date = now(), error_code ='" + errorCode + "', error_desc = '" + errorMessage + "' WHERE path = '" + path + "' and version_id is null";
+			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 4, error_date = now(), error_code ='" + errorCode + "', error_desc = '" + errorMessage + "'" + SQL_WHERE_PATH_WITH_VERSIONID_IS_NULL;
+			params.add(path);
 		}
 
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 			return false;
@@ -859,15 +925,24 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public void deleteObjects(String jobId, String path, String versionId) {
+		List<Object> params = new ArrayList<Object>();
 		String sql;
 		if (versionId != null && !versionId.isEmpty()) {
-			sql = SQL_DELETE_JOB + jobId + "_OBJECTS WHERE path = '" + path + "' and version_id = '" + versionId + SINGLE_QUOTATION;
+			sql = SQL_DELETE_JOB + jobId + "_OBJECTS" + SQL_WHERE_PATH_WITH_VERSIONID;
+			params.add(path);
+			params.add(versionId);
 		} else {
-			sql = SQL_DELETE_JOB + jobId + "_OBJECTS WHERE path = '" + path + "' and version_id is null";
+			sql = SQL_DELETE_JOB + jobId + "_OBJECTS" + SQL_WHERE_PATH_WITH_VERSIONID_IS_NULL;
+			params.add(path);
 		}
+		// if (versionId != null && !versionId.isEmpty()) {
+		// 	sql = SQL_DELETE_JOB + jobId + "_OBJECTS WHERE path = '" + path + "' and version_id = '" + versionId + SINGLE_QUOTATION;
+		// } else {
+		// 	sql = SQL_DELETE_JOB + jobId + "_OBJECTS WHERE path = '" + path + "' and version_id is null";
+		// }
 
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 		}
@@ -886,6 +961,59 @@ public class MariaDB implements MoverDB {
 	public List<HashMap<String, Object>> status() {
 		try {
 			return select(SQL_SELECT_JOB_STATUS, null);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+		}
+
+		return null;
+	}
+
+	@Override
+	public List<HashMap<String, Object>> status(String jobId) {
+		try {
+			List<Object> params = new ArrayList<Object>();
+			params.add(jobId);
+			return select(SQL_SELECT_JOB_STATUS_WITH_JOBID, params);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+		}
+
+		return null;
+	}
+
+	@Override
+	public List<HashMap<String, Object>> status(String srcBucketName, String dstBucketName) {
+		try {
+			List<Object> params = new ArrayList<Object>();
+			params.add("%" + srcBucketName + "%");
+			params.add("%" + dstBucketName + "%");
+			return select(SQL_SELECT_JOB_STATUS_WITH_SRC_DST_BUCKET, params);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+		}
+
+		return null;
+	}
+
+	@Override
+	public List<HashMap<String, Object>> statusSrcBucket(String bucket) {
+		try {
+			List<Object> params = new ArrayList<Object>();
+			params.add("%" + bucket + "%");
+			return select(SQL_SELECT_JOB_STATUS_WITH_SRC_BUCKET, params);
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+		}
+
+		return null;
+	}
+
+	@Override
+	public List<HashMap<String, Object>> statusDstBucket(String bucket) {
+		try {
+			List<Object> params = new ArrayList<Object>();
+			params.add("%" + bucket + "%");
+			return select(SQL_SELECT_JOB_STATUS_WITH_DST_BUCKET, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 		}
@@ -995,10 +1123,12 @@ public class MariaDB implements MoverDB {
 	public int stateWhenExistObject(String jobId, String path) {
 		List<HashMap<String, Object>> resultList = null;
 		int state = -1;
-		String sql = SQL_GET_OBJECT_STATE + jobId + SQL_OBJECT_WHERE_PATH + path + SINGLE_QUOTATION;
+		List<Object> params = new ArrayList<Object>();
+		String sql = SQL_GET_OBJECT_STATE + jobId + SQL_OBJECT_WHERE_PATH_ONLY;
+		params.add(path);
 
 		try {
-			resultList = select(sql, null);
+			resultList = select(sql, params);
 			if (resultList != null) {
 				state = (int) resultList.get(0).get("object_state");
 				logger.info("object_state = {}", state);
@@ -1014,10 +1144,13 @@ public class MariaDB implements MoverDB {
 	public String getMtime(String jobId, String path) {
 		List<HashMap<String, Object>> resultList = null;
 		String mtime = null;
-		String sql = SQL_GET_MTIME + jobId + SQL_OBJECT_WHERE_PATH + path + SINGLE_QUOTATION;
+		List<Object> params = new ArrayList<Object>();
+		String sql = SQL_GET_MTIME + jobId + SQL_OBJECT_WHERE_PATH_ONLY;
+		params.add(path);
+		// String sql = SQL_GET_MTIME + jobId + SQL_OBJECT_WHERE_PATH + path + SINGLE_QUOTATION;
 
 		try {
-			resultList = select(sql, null);
+			resultList = select(sql, params);
 			if (resultList != null) {
 				mtime = (String) resultList.get(0).get("mtime");
 				logger.info("mtime = {}", mtime);
@@ -1031,9 +1164,20 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public void updateDeleteMarker(String jobId, String path, String versionId) {
-		String sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3 WHERE path ='" + path + "' and version_id = '" + versionId + SINGLE_QUOTATION;
+		List<Object> params = new ArrayList<Object>();
+		String sql;
+		if (versionId != null && !versionId.isEmpty()) {
+			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3" + SQL_WHERE_PATH_WITH_VERSIONID;
+			params.add(path);
+			params.add(versionId);
+		} else {
+			sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3" + SQL_WHERE_PATH_WITH_VERSIONID_IS_NULL;
+			params.add(path);
+		}
+
+		// String sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3 WHERE path ='" + path + "' and version_id = '" + versionId + SINGLE_QUOTATION;
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 		}
@@ -1103,16 +1247,25 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public boolean updateSkipObject(String jobId, String path, String versionId) {
+		List<Object> params = new ArrayList<Object>();
 		String sql = UPDATE_JOB_ID + jobId + "_OBJECTS SET object_state = 3, skip_check = 1";
-
+		
 		if (versionId == null || versionId.isEmpty()) {
-			sql += " WHERE path = '" + path + SQL_VERSIONID_IS_NULL;
+			sql += SQL_WHERE_PATH_WITH_VERSIONID_IS_NULL;
+			params.add(path);
 		} else {
-			sql += " WHERE path = '" + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+			sql += SQL_WHERE_PATH_WITH_VERSIONID;
+			params.add(path);
+			params.add(versionId);
 		}
+		// if (versionId == null || versionId.isEmpty()) {
+		// 	sql += " WHERE path = '" + path + SQL_VERSIONID_IS_NULL;
+		// } else {
+		// 	sql += " WHERE path = '" + path + SQL_VERSIONID + versionId + SINGLE_QUOTATION;
+		// }
 
 		try {
-			execute(sql, null);
+			execute(sql, params);
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 			return false;

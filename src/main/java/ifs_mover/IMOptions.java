@@ -44,6 +44,9 @@ public class IMOptions {
 	private boolean isRemoveId;
 	private boolean isRerunId;
 	private boolean isStatus;
+	private boolean isJobId;
+	private boolean isSrcBucketName;
+	private boolean isDstBucketName;
 	
 	private String type;
 	private String sourceConfPath;
@@ -53,6 +56,9 @@ public class IMOptions {
 	private String removeId;
 	private String rerunId;
 	private int threadCount;
+	private String jobId;
+	private String srcBucketName;
+	private String dstBucketName;
 	
 	private final String FILE = "file";
 	private final String S3 = "s3";
@@ -123,6 +129,9 @@ public class IMOptions {
 		Option rerun = Option.builder(null).longOpt("rerun").hasArg(true).required(false).build();
 		Option check = Option.builder(null).longOpt("check").hasArg(false).required(false).build();
 		Option status = Option.builder(null).longOpt("status").hasArg(false).required(false).build();
+		Option jobid = Option.builder(null).longOpt("jobid").hasArg(true).required(false).build();
+		Option srcbucket = Option.builder(null).longOpt("srcbucket").hasArg(true).required(false).build();
+		Option dstbucket = Option.builder(null).longOpt("dstbucket").hasArg(true).required(false).build();
 		
 		options.addOption(help);
 		options.addOption(type);
@@ -135,6 +144,9 @@ public class IMOptions {
 		options.addOption(rerun);
 		options.addOption(check);
 		options.addOption(status);
+		options.addOption(jobid);
+		options.addOption(srcbucket);
+		options.addOption(dstbucket);
 	}
 	
 	private void parseOptions() {
@@ -243,6 +255,21 @@ public class IMOptions {
 		} else {
 			printUsage();
 		}
+
+		isJobId = line.hasOption("jobid");
+		if (isJobId) {
+			jobId = line.getOptionValue("jobid");
+		}
+
+		isSrcBucketName = line.hasOption("srcbucket");
+		if (isSrcBucketName) {
+			srcBucketName = line.getOptionValue("srcbucket");
+		}
+		
+		isDstBucketName = line.hasOption("dstbucket");
+		if (isDstBucketName) {
+			dstBucketName = line.getOptionValue("dstbucket");
+		}
 	}
 	
 	private void printUsage() {
@@ -281,7 +308,10 @@ public class IMOptions {
 		System.out.println("\t" + String.format("%-20s\t%s", "-target=target.conf", "target configuration file path"));
 		
 		System.out.println("Status Job");
-		System.out.println("\t" + String.format("%-20s\t%s", "-status", "show job progress"));
+		System.out.println("\t" + String.format("%-20s\t%s", "-status", "show all jobs progress"));
+		System.out.println("\t" + String.format("%-20s\t%s", "-jobid=jobid", "show job progress for jobid"));
+		System.out.println("\t" + String.format("%-20s\t%s", "-srcbucket=bucket", "show job progress for srcbucket"));
+		System.out.println("\t" + String.format("%-20s\t%s", "-dstbucket=bucket", "show job progress for dstbucket"));
 		
 		System.out.println("source.conf");
 		System.out.println("\t" + String.format("%-20s\t%s", "mountpoint", "information mounted on the server to be performed"));
@@ -465,5 +495,17 @@ public class IMOptions {
 
 	public String getSourceConfPath() {
 		return sourceConfPath;
+	}
+
+	public String getJobId() {
+		return jobId;
+	}
+	
+	public String getSrcBucketName() {
+		return srcBucketName;
+	}
+
+	public String getDstBucketName() {
+		return dstBucketName;
 	}
 }
