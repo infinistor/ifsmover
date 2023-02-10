@@ -14,12 +14,14 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 
+import com.amazonaws.services.s3.model.AccessControlList;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.S3Object;
 
 public class ObjectData {
     private S3Object s3Object;
     private ObjectMetadata meta;
+    private AccessControlList acl;
     private InputStream is;
     private File file;
     private long size;
@@ -27,6 +29,7 @@ public class ObjectData {
     public ObjectData() {
         s3Object = null;
         meta = null;
+        acl = null;
         is = null;
         file = null;
     }
@@ -38,6 +41,10 @@ public class ObjectData {
 
     public void setMetadata(ObjectMetadata metadata) {
         this.meta = metadata;
+    }
+
+    public void setAcl(AccessControlList acl) {
+        this.acl = acl;
     }
 
     public void setInputStream(InputStream is) {
@@ -54,6 +61,10 @@ public class ObjectData {
 
     public ObjectMetadata getMetadata() {
         return meta;
+    }
+
+    public AccessControlList getAcl() {
+        return acl;
     }
 
     public InputStream getInputStream() {

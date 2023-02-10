@@ -36,8 +36,12 @@ import ifs_mover.repository.RepositoryFactory;
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.SdkClientException;
+import com.amazonaws.services.s3.model.AccessControlList;
+import com.amazonaws.services.s3.model.CompleteMultipartUploadResult;
+import com.amazonaws.services.s3.model.GetObjectAclRequest;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PartETag;
+import com.amazonaws.services.s3.model.PutObjectResult;
 import com.amazonaws.services.s3.model.Tag;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -487,6 +491,8 @@ public class ObjectMover {
 			Map<String, String> tagMap = null;
 			List<Tag> tagSet = new ArrayList<Tag>();
 			
+			logger.debug("path:{}, versionId:{}, size:{}", path, versionId, size);
+
 			if (type.equalsIgnoreCase(Repository.SWIFT)) {
 				sourceBucket = path.split("/", 2)[0];
 				sourcePath = path.split("/", 2)[1];
@@ -649,9 +655,9 @@ public class ObjectMover {
 								}
 							} while (data != null);
 
-							targetRepository.completeMultipart(targetBucket, targetPath, uploadId, partList);
+							CompleteMultipartUploadResult completeMultipartUploadResult = targetRepository.completeMultipart(targetBucket, targetPath, uploadId, partList);
 							if (tagSet.size() > 0) {
-								targetRepository.setTagging(targetBucket, targetPath, tagSet);
+								targetRepository.setTagging(targetBucket, targetPath, completeMultipartUploadResult.getVersionId(), tagSet);
 							}
 							logger.info("move success : {}", path);
 						} else if ((!type.equalsIgnoreCase(Repository.IFS_FILE) && size > MAX_MULTIPART_SIZE)
@@ -670,6 +676,7 @@ public class ObjectMover {
 							}
 
 							ObjectMetadata objectMetadata = sourceRepository.getMetadata(sourceBucket, sourcePath, versionId);
+							AccessControlList objectAcl = sourceRepository.getAcl(sourceBucket, sourcePath, versionId);
 							String uploadId = targetRepository.startMultipart(targetBucket, targetPath, objectMetadata);
 							List<PartETag> partList = new ArrayList<PartETag>();
 							int partNumber = 1;
@@ -691,10 +698,11 @@ public class ObjectMover {
 								}
 							}
 
-							targetRepository.completeMultipart(targetBucket, targetPath, uploadId, partList);
+							CompleteMultipartUploadResult completeMultipartUploadResult = targetRepository.completeMultipart(targetBucket, targetPath, uploadId, partList);
+							targetRepository.setAcl(targetBucket, targetPath, completeMultipartUploadResult.getVersionId(), objectAcl);
 
 							if (tagSet.size() > 0) {
-								targetRepository.setTagging(targetBucket, targetPath, tagSet);
+								targetRepository.setTagging(targetBucket, targetPath, completeMultipartUploadResult.getVersionId(), tagSet);
 							}
 
 							if (versionId != null && !versionId.isEmpty()) {
@@ -705,9 +713,11 @@ public class ObjectMover {
 						} else {
 							ObjectData data = null;
 							String s3ETag = null;
+							PutObjectResult putObjectResult = null;
 							if (type.equalsIgnoreCase(Repository.IFS_FILE)) {
 								data = sourceRepository.getObject(sourcePath);
-								s3ETag = targetRepository.putObject(isFile, targetBucket, targetPath, data, data.getSize());
+								putObjectResult = targetRepository.putObject(isFile, targetBucket, targetPath, data, data.getSize());
+								s3ETag = putObjectResult.getETag();
 								data.close();
 							} else {
 								if (size > 0) {
@@ -716,17 +726,26 @@ public class ObjectMover {
 										logger.warn("not found : {} {}", sourceBucket, sourcePath);
 										return false;
 									}
-									s3ETag = targetRepository.putObject(isFile, targetBucket, targetPath, data, data.getSize());
+									putObjectResult = targetRepository.putObject(isFile, targetBucket, targetPath, data, data.getSize());
+									s3ETag = putObjectResult.getETag();
 									data.close();
 								} else {
 									ObjectMetadata meta = sourceRepository.getMetadata(sourceBucket, sourcePath, versionId);
+									AccessControlList acl = sourceRepository.getAcl(sourceBucket, sourcePath, versionId);
 									InputStream is = new ByteArrayInputStream(new byte[0]);
-									targetRepository.putObject(targetBucket, targetPath, is, meta); 
+									logger.debug("size : {}, meta size : {}", size, meta.getContentLength());
+									putObjectResult = targetRepository.putObject(targetBucket, targetPath, is, meta);
+									is.close();
+									targetRepository.setAcl(targetBucket, targetPath, putObjectResult.getVersionId(), acl);
 								}
 							}
 
 							if (tagSet.size() > 0) {
-								targetRepository.setTagging(targetBucket, targetPath, tagSet);
+								targetRepository.setTagging(targetBucket, targetPath, putObjectResult.getVersionId(), tagSet);
+							}
+
+							if (data != null && data.getAcl() != null) {
+								targetRepository.setAcl(targetBucket, targetPath, putObjectResult.getVersionId(), data.getAcl());
 							}
 
 							if (!type.equalsIgnoreCase(Repository.IFS_FILE) && isFile && size > 0) {
@@ -775,19 +794,14 @@ public class ObjectMover {
 						} else {
 							if (versionId != null && versionId.compareToIgnoreCase("null") == 0) {
 								ObjectMetadata meta = sourceRepository.getMetadata(sourceBucket, sourcePath, versionId);
+								AccessControlList acl = sourceRepository.getAcl(sourceBucket, sourcePath, versionId);
 								InputStream is = new ByteArrayInputStream(new byte[0]);
-								// data = sourceRepository.getObject(sourceBucket, sourcePath, versionId);
-								// data = sourceRepository.getObject(sourceBucket, sourcePath, null);
-								// if (data == null) {
-								// 	logger.warn("not found : {} {}", sourceBucket, sourcePath);
-								// 	return false;
-								// }
-								// targetRepository.putObject(isFile, targetBucket, targetPath, data, 0L);
-								targetRepository.putObject(targetBucket, targetPath, is, meta);
+								PutObjectResult putObjectResult = targetRepository.putObject(targetBucket, targetPath, is, meta);
 								is.close();
 								if (tagSet.size() > 0) {
-									targetRepository.setTagging(targetBucket, targetPath, tagSet);
+									targetRepository.setTagging(targetBucket, targetPath, putObjectResult.getVersionId(), tagSet);
 								}
+								targetRepository.setAcl(targetBucket, targetPath, putObjectResult.getVersionId(), acl);
 							} else {
 								logger.info("Ignore this object because Because it is a directory with versionid, path : {}, versionId : {}", path, versionId);
 							}
@@ -811,6 +825,7 @@ public class ObjectMover {
 				}
 				return false;
 			} catch (AmazonClientException ace) {
+				Utils.logging(logger, ace);
 				logger.warn("{} {}", path, ace.getMessage());
 				// Ignore 'etag' even if it's different after gettingObject in S3
 				// try {
@@ -944,6 +959,7 @@ public class ObjectMover {
 					}
 
 					isTargetSkip = false;
+					logger.debug("path:{}, versionId:{}, size:{}", path, versionId, size);
 					retryMoveObject(path, isDelete, isFile, versionId, etag, multipartInfo, tag, size, skipCheck);
 					if (isTargetSkip) {
 						continue;
@@ -967,7 +983,7 @@ public class ObjectMover {
 				if (!isDoneLatest) {
 					// Latest should be performed at the end.
 					isTargetSkip = false;
-					retryMoveObject(latestPath, latestIsDelete, latestIsFile, latestVersionId, latestETag, latestMultipartInfo, latestTag, size, latestSkipCheck);
+					retryMoveObject(latestPath, latestIsDelete, latestIsFile, latestVersionId, latestETag, latestMultipartInfo, latestTag, latestSize, latestSkipCheck);
 
 					if (!isTargetSkip && !(isRerun && !skipCheck)) {
 						if (isFault) {

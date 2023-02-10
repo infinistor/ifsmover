@@ -22,6 +22,7 @@ import org.apache.commons.io.FilenameUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.amazonaws.services.s3.model.AccessControlList;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 
 import ifs_mover.Config;
@@ -308,5 +309,11 @@ public class IfsFile implements Repository {
     public SyncMode getTargetSyncMode() {
         // TODO Auto-generated method stub
         return SyncMode.UNKNOWN;
+    }
+
+    @Override
+    public AccessControlList getAcl(String bucket, String key, String versionId) {
+        // TODO Auto-generated method stub
+        return null;
     }
 }

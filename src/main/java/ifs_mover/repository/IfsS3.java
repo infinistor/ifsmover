@@ -31,8 +31,12 @@ import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import com.amazonaws.services.s3.model.AccessControlList;
 import com.amazonaws.services.s3.model.BucketVersioningConfiguration;
+import com.amazonaws.services.s3.model.CannedAccessControlList;
 import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
+import com.amazonaws.services.s3.model.CompleteMultipartUploadResult;
+import com.amazonaws.services.s3.model.GetObjectAclRequest;
 import com.amazonaws.services.s3.model.GetObjectMetadataRequest;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.GetObjectTaggingRequest;
@@ -46,10 +50,12 @@ import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.ObjectTagging;
 import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.PutObjectRequest;
+import com.amazonaws.services.s3.model.PutObjectResult;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.model.S3VersionSummary;
 import com.amazonaws.services.s3.model.SetBucketVersioningConfigurationRequest;
+import com.amazonaws.services.s3.model.SetObjectAclRequest;
 import com.amazonaws.services.s3.model.SetObjectTaggingRequest;
 import com.amazonaws.services.s3.model.Tag;
 import com.amazonaws.services.s3.model.UploadPartRequest;
@@ -890,19 +896,23 @@ public class IfsS3 implements Repository, S3 {
 	public ObjectData getObject(String bucket, String key, String versionId) {
 		ObjectData data = new ObjectData();
 		GetObjectRequest getObjectRequest = null;
+		GetObjectAclRequest getObjectAclRequest = null;
 		S3Object s3Object = null;
 		
 		// if (versionId == null || versionId.equalsIgnoreCase("null")) {
 		if (versionId == null) {
 			getObjectRequest = new GetObjectRequest(bucket, key);
+			getObjectAclRequest = new GetObjectAclRequest(bucket, key);
 		} else {
 			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId);
+			getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
 		}
 		s3Object = client.getObject(getObjectRequest);
 		data.setS3Object(s3Object);
 		data.setMetadata(s3Object.getObjectMetadata());
 		data.setInputStream(s3Object.getObjectContent());
 		data.setSize(s3Object.getObjectMetadata().getContentLength());
+		data.setAcl(client.getObjectAcl(getObjectAclRequest));
 
 		return data;
 	}
@@ -911,17 +921,22 @@ public class IfsS3 implements Repository, S3 {
 	public ObjectData getObject(String bucket, String key, String versionId, long start) {
 		ObjectData data = new ObjectData();
 		GetObjectRequest getObjectRequest = null;
+		GetObjectAclRequest getObjectAclRequest = null;
 		S3Object s3Object = null;
 
 		if (versionId == null) {
 			getObjectRequest = new GetObjectRequest(bucket, key).withRange(start);
+			getObjectAclRequest = new GetObjectAclRequest(bucket, key);
 		} else {
 			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId).withRange(start);
+			getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
 		}
 		s3Object = client.getObject(getObjectRequest);
 		data.setS3Object(s3Object);
+		data.setMetadata(s3Object.getObjectMetadata());
 		data.setInputStream(s3Object.getObjectContent());
 		data.setSize(s3Object.getObjectMetadata().getContentLength());
+		data.setAcl(client.getObjectAcl(getObjectAclRequest));
 		return data;
 	}
 
@@ -929,17 +944,21 @@ public class IfsS3 implements Repository, S3 {
 	public ObjectData getObject(String bucket, String key, String versionId, long start, long end) {
 		ObjectData data = new ObjectData();
 		GetObjectRequest getObjectRequest = null;
+		GetObjectAclRequest getObjectAclRequest = null;
 		S3Object s3Object = null;
 
 		if (versionId == null) {
 			getObjectRequest = new GetObjectRequest(bucket, key).withRange(start, end);
+			getObjectAclRequest = new GetObjectAclRequest(bucket, key);
 		} else {
 			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId).withRange(start, end);
+			getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
 		}
 		s3Object = client.getObject(getObjectRequest);
 		data.setS3Object(s3Object);
 		data.setInputStream(s3Object.getObjectContent());
 		data.setSize(s3Object.getObjectMetadata().getContentLength());
+		data.setAcl(client.getObjectAcl(getObjectAclRequest));
 		return data;
 	}
 
@@ -957,17 +976,23 @@ public class IfsS3 implements Repository, S3 {
 	}
 
 	@Override
-	public String completeMultipart(String bucket, String key, String uploadId, List<PartETag> list) {
-		return client.completeMultipartUpload(new CompleteMultipartUploadRequest(bucket, key, uploadId, list)).getETag();
+	public CompleteMultipartUploadResult completeMultipart(String bucket, String key, String uploadId, List<PartETag> list) {
+		return client.completeMultipartUpload(new CompleteMultipartUploadRequest(bucket, key, uploadId, list));
 	}
 
 	@Override
-	public void setTagging(String bucket, String key, List<Tag> tagSet) {
-		client.setObjectTagging(new SetObjectTaggingRequest(bucket, key, new ObjectTagging(tagSet)));
+	public void setTagging(String bucket, String key, String versionId, List<Tag> tagSet) {
+		SetObjectTaggingRequest setObjectTaggingRequest = null;
+		if (versionId != null) {
+			setObjectTaggingRequest = new SetObjectTaggingRequest(bucket, key, versionId, new ObjectTagging(tagSet));
+		} else {
+			setObjectTaggingRequest = new SetObjectTaggingRequest(bucket, key, new ObjectTagging(tagSet));
+		}
+		client.setObjectTagging(setObjectTaggingRequest);
 	}
 
 	@Override
-	public String putObject(boolean isFile, String bucket, String key, ObjectData data, long size) {
+	public PutObjectResult putObject(boolean isFile, String bucket, String key, ObjectData data, long size) {
 		PutObjectRequest putObjectRequest = null;
 		if (data.getFile() != null) {
 			putObjectRequest = new PutObjectRequest(bucket, key, data.getFile());
@@ -979,7 +1004,8 @@ public class IfsS3 implements Repository, S3 {
 			}
 			putObjectRequest = new PutObjectRequest(bucket, key, data.getInputStream(), data.getMetadata());
 		}
-		return client.putObject(putObjectRequest).getETag();
+
+		return client.putObject(putObjectRequest);
 	}
 
 	@Override
@@ -1155,9 +1181,9 @@ public class IfsS3 implements Repository, S3 {
 	}
 
 	@Override
-	public String putObject(String bucketName, String key, InputStream input, ObjectMetadata metadata) {
+	public PutObjectResult putObject(String bucketName, String key, InputStream input, ObjectMetadata metadata) {
 		PutObjectRequest putObjectRequest = new PutObjectRequest(bucketName, key, input, metadata);
-		return client.putObject(putObjectRequest).getETag();
+		return client.putObject(putObjectRequest);
 	}
 
 	@Override
@@ -1228,5 +1254,36 @@ public class IfsS3 implements Repository, S3 {
 	@Override
 	public SyncMode getTargetSyncMode() {
 		return targetSyncMode;
+	}
+
+	@Override
+	public void setAcl(String bucket, String key, String versionId, AccessControlList acl) {
+		// TODO Auto-generated method stub
+		SetObjectAclRequest setObjectAclRequest = null;
+		if (acl.getGrantsAsList().size() == 0) {
+			if (versionId != null) {
+				setObjectAclRequest = new SetObjectAclRequest(bucket, key, versionId, CannedAccessControlList.Private);
+			} else {
+				setObjectAclRequest = new SetObjectAclRequest(bucket, key, CannedAccessControlList.Private);
+			}
+		} else {
+			if (versionId != null) {
+				setObjectAclRequest = new SetObjectAclRequest(bucket, key, versionId, acl);
+			} else {
+				setObjectAclRequest = new SetObjectAclRequest(bucket, key, acl);
+			}
+		}
+		client.setObjectAcl(setObjectAclRequest);
+	}
+
+	@Override
+	public AccessControlList getAcl(String bucket, String key, String versionId) {
+		GetObjectAclRequest getObjectAclRequest = null;
+		if (versionId != null) {
+			getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
+		} else {
+			getObjectAclRequest = new GetObjectAclRequest(bucket, key);
+		}
+		return client.getObjectAcl(getObjectAclRequest);
 	}
 }

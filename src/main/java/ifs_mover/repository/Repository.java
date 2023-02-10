@@ -12,6 +12,7 @@ package ifs_mover.repository;
 
 import java.util.List;
 
+import com.amazonaws.services.s3.model.AccessControlList;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 
 import ifs_mover.Config;
@@ -62,6 +63,7 @@ public interface Repository {
     String setTargetPrefix(String path);
 
     ObjectMetadata getMetadata(String bucket, String key, String versionId);
+    AccessControlList getAcl(String bucket, String key, String versionId);
     ObjectData getObject(String path);
     ObjectData getObject(String bucket, String key, String versionId);
     ObjectData getObject(String bucket, String key, String versionId, long start);
