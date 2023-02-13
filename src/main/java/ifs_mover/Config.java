@@ -39,6 +39,7 @@ public class Config {
 	private String sync;
 	private String syncCheck;
 	private String type;
+	private String acl;
 	
 	// for openstack swift
 	private String userName;
@@ -52,7 +53,10 @@ public class Config {
 
 	private boolean isAWS;
 	private boolean isTargetSync;
-	private SyncMode syncMode; 
+	private SyncMode syncMode;
+
+	// for acl info
+	private boolean isACL;
 
 	private final String MOUNT_POINT = "mountpoint";
 	private final String END_POINT = "endpoint";
@@ -65,6 +69,7 @@ public class Config {
 	private final String VERSIONING = "versioning";	// ON OFF
 	private final String TARGET_SYNC = "sync";
 	private final String TARGET_SYNC_MODE = "sync_mode";
+	private final String ACL = "acl";
 
 	// for openstack swift support
 	private final String USER_NAME = "user_name";
@@ -119,6 +124,7 @@ public class Config {
 		versioning = properties.getProperty(VERSIONING);
 		sync = properties.getProperty(TARGET_SYNC);
 		syncCheck = properties.getProperty(TARGET_SYNC_MODE);
+		acl = properties.getProperty(ACL);
 
 		if (mountPoint != null && !mountPoint.isEmpty() && !mountPoint.endsWith("/")) {
 			mountPoint += "/";
@@ -181,6 +187,17 @@ public class Config {
 			}
 		} else {
 			syncMode = SyncMode.UNKNOWN;
+		}
+
+		if (acl != null &&!acl.isEmpty()) {
+			acl = acl.toLowerCase();
+			if (acl.compareTo(ON) == 0) {
+				isACL = true;
+			} else {
+				isACL = false;
+			}
+		} else {
+			isACL = false;
 		}
 	}
 
@@ -308,5 +325,9 @@ public class Config {
 
 	public String getVersoning() {
 		return versioning;
+	}
+
+	public boolean isACL() {
+		return isACL;
 	}
 }

@@ -83,6 +83,7 @@ public class IfsS3 implements Repository, S3 {
 	private String errMessage;
 	private BucketVersioningConfiguration versionConfig;
 	private boolean targetVersioning;
+	private boolean isACL;
 
 	private final String HTTPS = "https";
 	private final String AWS_S3_V4_SIGNER_TYPE = "AWSS3V4SignerType";
@@ -129,6 +130,7 @@ public class IfsS3 implements Repository, S3 {
 			isTargetSync = false;
 			targetSyncMode = SyncMode.UNKNOWN;
 		}
+		isACL = config.isACL();
     }
 
     @Override
@@ -902,17 +904,23 @@ public class IfsS3 implements Repository, S3 {
 		// if (versionId == null || versionId.equalsIgnoreCase("null")) {
 		if (versionId == null) {
 			getObjectRequest = new GetObjectRequest(bucket, key);
-			getObjectAclRequest = new GetObjectAclRequest(bucket, key);
+			if (isACL) {
+				getObjectAclRequest = new GetObjectAclRequest(bucket, key);
+			}
 		} else {
 			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId);
-			getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
+			if (isACL) {
+				getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
+			}
 		}
 		s3Object = client.getObject(getObjectRequest);
 		data.setS3Object(s3Object);
 		data.setMetadata(s3Object.getObjectMetadata());
 		data.setInputStream(s3Object.getObjectContent());
 		data.setSize(s3Object.getObjectMetadata().getContentLength());
-		data.setAcl(client.getObjectAcl(getObjectAclRequest));
+		if (isACL) {
+			data.setAcl(client.getObjectAcl(getObjectAclRequest));
+		}
 
 		return data;
 	}
@@ -926,17 +934,23 @@ public class IfsS3 implements Repository, S3 {
 
 		if (versionId == null) {
 			getObjectRequest = new GetObjectRequest(bucket, key).withRange(start);
-			getObjectAclRequest = new GetObjectAclRequest(bucket, key);
+			if (isACL) {
+				getObjectAclRequest = new GetObjectAclRequest(bucket, key);
+			}
 		} else {
 			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId).withRange(start);
-			getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
+			if (isACL) {
+				getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
+			}
 		}
 		s3Object = client.getObject(getObjectRequest);
 		data.setS3Object(s3Object);
 		data.setMetadata(s3Object.getObjectMetadata());
 		data.setInputStream(s3Object.getObjectContent());
 		data.setSize(s3Object.getObjectMetadata().getContentLength());
-		data.setAcl(client.getObjectAcl(getObjectAclRequest));
+		if (isACL) {
+			data.setAcl(client.getObjectAcl(getObjectAclRequest));
+		}
 		return data;
 	}
 
@@ -949,16 +963,22 @@ public class IfsS3 implements Repository, S3 {
 
 		if (versionId == null) {
 			getObjectRequest = new GetObjectRequest(bucket, key).withRange(start, end);
-			getObjectAclRequest = new GetObjectAclRequest(bucket, key);
+			if (isACL) {
+				getObjectAclRequest = new GetObjectAclRequest(bucket, key);
+			}
 		} else {
 			getObjectRequest = new GetObjectRequest(bucket, key).withVersionId(versionId).withRange(start, end);
-			getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
+			if (isACL) {
+				getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
+			}
 		}
 		s3Object = client.getObject(getObjectRequest);
 		data.setS3Object(s3Object);
 		data.setInputStream(s3Object.getObjectContent());
 		data.setSize(s3Object.getObjectMetadata().getContentLength());
-		data.setAcl(client.getObjectAcl(getObjectAclRequest));
+		if (isACL) {
+			data.setAcl(client.getObjectAcl(getObjectAclRequest));
+		}
 		return data;
 	}
 
@@ -1259,31 +1279,36 @@ public class IfsS3 implements Repository, S3 {
 	@Override
 	public void setAcl(String bucket, String key, String versionId, AccessControlList acl) {
 		// TODO Auto-generated method stub
-		SetObjectAclRequest setObjectAclRequest = null;
-		if (acl.getGrantsAsList().size() == 0) {
-			if (versionId != null) {
-				setObjectAclRequest = new SetObjectAclRequest(bucket, key, versionId, CannedAccessControlList.Private);
+		if (isACL) {
+			SetObjectAclRequest setObjectAclRequest = null;
+			if (acl.getGrantsAsList().size() == 0) {
+				if (versionId != null) {
+					setObjectAclRequest = new SetObjectAclRequest(bucket, key, versionId, CannedAccessControlList.Private);
+				} else {
+					setObjectAclRequest = new SetObjectAclRequest(bucket, key, CannedAccessControlList.Private);
+				}
 			} else {
-				setObjectAclRequest = new SetObjectAclRequest(bucket, key, CannedAccessControlList.Private);
+				if (versionId != null) {
+					setObjectAclRequest = new SetObjectAclRequest(bucket, key, versionId, acl);
+				} else {
+					setObjectAclRequest = new SetObjectAclRequest(bucket, key, acl);
+				}
 			}
-		} else {
-			if (versionId != null) {
-				setObjectAclRequest = new SetObjectAclRequest(bucket, key, versionId, acl);
-			} else {
-				setObjectAclRequest = new SetObjectAclRequest(bucket, key, acl);
-			}
+			client.setObjectAcl(setObjectAclRequest);
 		}
-		client.setObjectAcl(setObjectAclRequest);
 	}
 
 	@Override
 	public AccessControlList getAcl(String bucket, String key, String versionId) {
-		GetObjectAclRequest getObjectAclRequest = null;
-		if (versionId != null) {
-			getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
-		} else {
-			getObjectAclRequest = new GetObjectAclRequest(bucket, key);
+		if (isACL) {
+			GetObjectAclRequest getObjectAclRequest = null;
+			if (versionId != null) {
+				getObjectAclRequest = new GetObjectAclRequest(bucket, key).withVersionId(versionId);
+			} else {
+				getObjectAclRequest = new GetObjectAclRequest(bucket, key);
+			}
+			return client.getObjectAcl(getObjectAclRequest);
 		}
-		return client.getObjectAcl(getObjectAclRequest);
+		return null;
 	}
 }

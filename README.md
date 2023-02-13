@@ -67,6 +67,7 @@ source.conf
         project_id              project id for swift
         project_name            project name for swift
         container               list of containers(If it is empty, it means all container)
+        acl                     object ACL on, off
 target.conf
         endpoint                http(https)://IP:Port | region
         access                  Access Key ID
@@ -76,6 +77,7 @@ target.conf
         versioning              bucket versioning on, off
         sync                    target object sync on, off
         sync_mode               target object sync mode, [etag|size|exist]
+        acl                     object ACL on, off
 주) –o는 향후 개발 예정
 ```
 
@@ -140,6 +142,7 @@ source.conf
     bucket:         Bucket Name
     prefix:         MOVE를 시작할 PREFIX/DIR 이름 정보
     move_size:      The size of the file that you can move at once. (M bytes)
+    acl:            object ACL 정보 획득 여부(on/off)
     user_name       user name for swift
     api_key         api key for swift
     auth_endpoint   http(https)://IP:port/v3
@@ -168,6 +171,7 @@ target.conf
                 exist : target에 source object가 존재하는 경우 skip
                 sync=on 이고, sync_mode 값이 없는 경우 etag가 기본 값으로 설정된다.
                 * 주의 - type=file인 경우에는 etag로 지정하여도 etag를 검사하지 않는다. type=file 인 경우 source 파일의 etag를 수집하지 않음.
+    acl:        object ACL 복사 여부(on/off)
 ```
 
 ### 설정 파일 예시
@@ -227,6 +231,27 @@ target.conf
     secret=sdfsdfsdfcd408e83e23dab92
     bucket=move-test
     prefix=
+```
+
+#### S3 -> S3 (move-test/move_old_objects/* -> /move-test/*) + ACL 정보도 같이 복사하려는 경우
+```sh
+source.conf 
+    mountpoint=
+    endpoint=http://www.s3abc.com:8080
+    access=a9dad4ce7233sdfesdfsd
+    secret=sdfsdfsdfcd408e83e23dab92
+    bucket=move-test
+    prefix=move_old_objects
+    move_size=
+    acl=on
+
+target.conf
+    endpoint=https://www.s3other.com:8443
+    access=a9dad4ce7233sdfesdfsd
+    secret=sdfsdfsdfcd408e83e23dab92
+    bucket=move-test
+    prefix=
+    acl=on
 ```
 
 #### S3 -> S3 (AWS) (/move-test/0720/* -> /move-test/*)
@@ -565,3 +590,5 @@ db_pool_size=10         // mariadb 시 db connection pool size
 <kbd>./ifs_mover -t=s3 -source=source.conf -target=target.conf</kbd>
 
 * 더 자세한 실행 방법은 본 문서의 "실행 예시", "설정 파일 예시"를 참조하세요.
+
+
