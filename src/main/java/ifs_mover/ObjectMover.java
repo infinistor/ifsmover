@@ -352,8 +352,6 @@ public class ObjectMover {
 				}
 			}
 
-			logger.info("change path : {} -> {}", path, targetPath);
-
 			if (versionId != null && versionId.compareTo("0") == 0) {
 				versionId = null;
 			}
