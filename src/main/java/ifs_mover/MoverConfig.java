@@ -32,7 +32,7 @@ public class MoverConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(MoverConfig.class);
 
-    private static final String CONFIG_PATH = "etc/ifs-mover.conf";
+    private static final String CONFIG_PATH = "/usr/local/pspace/etc/mover/ifs-mover.conf";
     private static final String DB_REPOSITORY = "db_repository";
     private static final String DB_HOST = "db_host";
     private static final String DB_NAME = "db_name";
