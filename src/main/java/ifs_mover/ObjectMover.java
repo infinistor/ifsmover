@@ -171,32 +171,35 @@ public class ObjectMover {
 		}
 
 		// check target conf versioning
-		if (targetConfig.getVersoning() == null || targetConfig.getVersoning().isEmpty()) {
-			targetVersioning = true;
-		} else if (targetConfig.getVersoning().compareToIgnoreCase("OFF") == 0) {
-			targetVersioning = false;
-		} else {
-			targetVersioning = true;
-		}
+		// if (targetConfig.getVersoning() == null || targetConfig.getVersoning().isEmpty()) {
+		// 	targetVersioning = true;
+		// } else if (targetConfig.getVersoning().compareToIgnoreCase("OFF") == 0) {
+		// 	targetVersioning = false;
+		// } else {
+		// 	targetVersioning = true;
+		// }
 
 		// check source bucket versioning
-		if (sourceRepository.isVersioning()) {
+		// if (sourceRepository.isVersioning()) {
 			// check target bucket versioning
-			if (!targetRepository.isVersioning()) {
-				if (targetVersioning) {
-					isVersioning = true;
-					targetRepository.setVersioning();
-				} else {
-					isVersioning = false;
-				}
-			} else {
-				isVersioning = true;
-				targetVersioning = true;
-			}
-		} else {
-			isVersioning = false;
-			targetVersioning = false;
-		}
+		// 	if (!targetRepository.isVersioning()) {
+		// 		if (targetVersioning) {
+		// 			isVersioning = true;
+		// 			targetRepository.setVersioning();
+		// 		} else {
+		// 			isVersioning = false;
+		// 		}
+		// 	} else {
+		// 		isVersioning = true;
+		// 		targetVersioning = true;
+		// 	}
+		// } else {
+		// 	isVersioning = false;
+		// 	targetVersioning = false;
+		// }
+
+		isVersioning = false;
+		targetVersioning = false;
 
 		logger.info("isVersioning : {}, targetVersioning : {}", isVersioning, targetVersioning);
 		if (targetConfig.isTargetSync()) {
@@ -229,6 +232,7 @@ public class ObjectMover {
 			long end = System.currentTimeMillis();
 			logger.info("skip check time : {} ms", end - start);
 		}
+		
 		targetRepository.makeTargetObjectList(targetVersioning);
 	}
 
