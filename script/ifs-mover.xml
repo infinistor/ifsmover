@@ -21,7 +21,7 @@
         </sift>
     </appender>
     
-    <root level="debug">
+    <root level="info">
         <appender-ref ref="JOB-TRACE"/>
     </root>
 </configuration>
