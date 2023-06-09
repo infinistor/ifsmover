@@ -92,10 +92,6 @@ public class Main {
 		}
 		String inventoryFileName = options.getInventoryFileName();
 		
-		// DBManager.init();
-		// String directoryName = System.getProperty("user.dir");
-		// System.out.println("Current Working Directory is = " + directoryName);
-
 		MoverConfig config = MoverConfig.getInstance();
 		config.configure();
 		logger.info("db init ... pool size : {}", config.getDbPoolSize());
@@ -105,11 +101,6 @@ public class Main {
 			logger.error(e.getMessage());
 			System.exit(-1);
 		}
-
-		
-
-		// disabling the integrity verification
-		// System.setProperty(SkipMd5CheckStrategy.DISABLE_GET_OBJECT_MD5_VALIDATION_PROPERTY,"true");
 		
 		switch (type) {
 		case CHECK:
@@ -158,7 +149,7 @@ public class Main {
 		case STOP:
 			jobId = options.getStopId();
 			logger.info("IFS_MOVER({}) STOP", pid);
-			// String pidOfJob = DBManager.getProcessId(jobId);
+
 			String pidOfJob = Utils.getDBInstance().getProcessId(jobId);
 			if (pidOfJob == null) {
 				System.out.println("Can't find pid with jobID : " + jobId);
@@ -170,12 +161,10 @@ public class Main {
 			try {
 				Process p = Runtime.getRuntime().exec("kill -9 " + pidOfJob);
 				p.waitFor();
-				// DBManager.updateJobState(jobId, type);
 				Utils.getDBInstance().updateJobState(jobId, type);
 			} catch (InterruptedException | IOException e) {
 				logger.error("faild stop job : {} - {}", jobId, e.getMessage());
 			}
-			// DBManager.updateJobEnd(jobId);
 			Utils.getDBInstance().updateJobEnd(jobId);
 			logger.info(IFS_MOVER_END, pid);
 			break;
@@ -183,9 +172,7 @@ public class Main {
 		case REMOVE:
 			logger.info("IFS_MOVER({}) REMOVE", pid);
 			jobId = options.getRemoveId();
-			// DBManager.dropMoveObjectIndex(jobId);
-			// DBManager.dropMoveObjectTable(jobId);
-			// DBManager.updateJobState(jobId, type);
+
 			if (Utils.getDBInstance().isExistMoveTable(config.getDatabase(), jobId)) {
 				Utils.getDBInstance().dropMoveObjectIndex(jobId);
 				Utils.getDBInstance().dropMoveObjectTable(jobId);

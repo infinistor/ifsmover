@@ -1154,7 +1154,8 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public void dropMoveObjectIndex(String jobId) {
-		String sql = SQL_DROP_MOVE_OBJECT_INDEX + jobId + UNDER_OBJECTS + SQL_MTIME_INDEX + jobId + UNDER_OBJECTS + SQL_OBJECT_STATE_INDEX + jobId + UNDER_OBJECTS;
+		// String sql = SQL_DROP_MOVE_OBJECT_INDEX + jobId + UNDER_OBJECTS + SQL_MTIME_INDEX + jobId + UNDER_OBJECTS + SQL_OBJECT_STATE_INDEX + jobId + UNDER_OBJECTS;
+		String sql = "ALTER TABLE JOB_" + jobId + "_OBJECTS DROP INDEX ALL";
 		logger.info("sql : {}", sql);
 		try {
 			execute(sql, null);
@@ -1658,7 +1659,8 @@ public class MariaDB implements MoverDB {
 
 	@Override
 	public void dropRerunObjectIndex(String jobId) {
-		String sql = SQL_DROP_MOVE_OBJECT_INDEX + jobId + UNDER_RERUN_OBJECTS + SQL_MTIME_INDEX + jobId + UNDER_RERUN_OBJECTS + SQL_OBJECT_STATE_INDEX + jobId + UNDER_RERUN_OBJECTS;
+		// String sql = SQL_DROP_MOVE_OBJECT_INDEX + jobId + UNDER_RERUN_OBJECTS + SQL_MTIME_INDEX + jobId + UNDER_RERUN_OBJECTS + SQL_OBJECT_STATE_INDEX + jobId + UNDER_RERUN_OBJECTS;
+		String sql = "ALTER TABLE JOB_" + jobId + "_RERUN_OBJECTS DROP INDEX ALL";
 		logger.info("sql : {}", sql);
 		try {
 			execute(sql, null);
@@ -2252,7 +2254,7 @@ public class MariaDB implements MoverDB {
 			 ResultSet rs = pstmt.executeQuery();
 			) {
 			if (rs.next()) {
-				return rs.getInt("job_status");
+				return rs.getInt("job_state");
 			}
 		} catch (SQLException e) {
 			logger.error(e.getMessage());
