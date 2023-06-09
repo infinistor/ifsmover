@@ -47,6 +47,7 @@ public class IMOptions {
 	private boolean isJobId;
 	private boolean isSrcBucketName;
 	private boolean isDstBucketName;
+	private boolean isInventoryFile;
 	
 	private String type;
 	private String sourceConfPath;
@@ -59,6 +60,7 @@ public class IMOptions {
 	private String jobId;
 	private String srcBucketName;
 	private String dstBucketName;
+	private String inventoryFileName;
 	
 	private final String FILE = "file";
 	private final String S3 = "s3";
@@ -132,6 +134,7 @@ public class IMOptions {
 		Option jobid = Option.builder(null).longOpt("jobid").hasArg(true).required(false).build();
 		Option srcbucket = Option.builder(null).longOpt("srcbucket").hasArg(true).required(false).build();
 		Option dstbucket = Option.builder(null).longOpt("dstbucket").hasArg(true).required(false).build();
+		Option inventory = Option.builder("f").longOpt("inventory").hasArg(true).required(false).build();
 		
 		options.addOption(help);
 		options.addOption(type);
@@ -147,6 +150,7 @@ public class IMOptions {
 		options.addOption(jobid);
 		options.addOption(srcbucket);
 		options.addOption(dstbucket);
+		options.addOption(inventory);
 	}
 	
 	private void parseOptions() {
@@ -270,6 +274,11 @@ public class IMOptions {
 		if (isDstBucketName) {
 			dstBucketName = line.getOptionValue("dstbucket");
 		}
+
+		isInventoryFile = line.hasOption("f");
+		if (isInventoryFile) {
+			inventoryFileName = line.getOptionValue("f");
+		}
 	}
 	
 	private void printUsage() {
@@ -286,6 +295,7 @@ public class IMOptions {
 		System.out.println("\t\t" + String.format("%-8s\t %s", "", "744, READ permission granted to AUTHENTICATED_USER and PUBLIC"));
 		System.out.println("\t\t" + String.format("%-8s\t %s", "time", "save file's C/M/A time in S3 meta"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-thread=", "thread count"));
+		System.out.println("\t" + String.format("%-20s\t%s", "-f=file", "inventory file path"));
 		
 		System.out.println("Stop Job");
 		System.out.println("\t" + String.format("%-20s\t%s", "-jobstop=jobid", "stop a job in progress"));
@@ -300,6 +310,7 @@ public class IMOptions {
 		System.out.println("\t" + String.format("%-20s\t%s", "-source=source.conf", "source configuration file path"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-target=target.conf", "target configuration file path"));
 		System.out.println("\t" + String.format("%-20s\t%s", "-thread=", "thread count"));
+		System.out.println("\t" + String.format("%-20s\t%s", "-f=file", "inventory file path"));
 		
 		System.out.println("Check");
 		System.out.println("\t" + String.format("%-20s\t%s", "-check", "check source and target configuration"));
@@ -423,13 +434,6 @@ public class IMOptions {
 		}
 		return null;
 	}
-
-	public int getSourceMoveSize() {
-		if (sourceConfig != null) {
-			return Integer.parseInt(sourceConfig.getMoveSize());
-		}
-		return 0;
-	}
 	
 	public String getTargetEndPoint() {
 		if (targetConfig != null) {
@@ -507,5 +511,9 @@ public class IMOptions {
 
 	public String getDstBucketName() {
 		return dstBucketName;
+	}
+
+	public String getInventoryFileName() {
+		return inventoryFileName;
 	}
 }

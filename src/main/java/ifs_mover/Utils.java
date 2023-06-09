@@ -15,6 +15,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.VersionListing;
 import com.google.common.base.CharMatcher;
 
 import ifs_mover.db.MariaDB;
@@ -30,26 +32,26 @@ public class Utils {
 	private static MoverDB moverDB;
     public final static int RETRY_COUNT = 3;
 
-	private static final List<Map<String, String>>movedObjectList = new ArrayList<Map<String, String>>();
-	private static final List<Map<String, Long>>movedJobList = new ArrayList<Map<String, Long>>();
-	private static final List<Map<String, String>>failedObjectList = new ArrayList<Map<String, String>>();
-	private static final List<Map<String, Long>>failedJobList = new ArrayList<Map<String, Long>>();
+	// private static final List<Map<String, String>>movedObjectList = new ArrayList<Map<String, String>>();
+	// private static final List<Map<String, Long>>movedJobList = new ArrayList<Map<String, Long>>();
+	// private static final List<Map<String, String>>failedObjectList = new ArrayList<Map<String, String>>();
+	// private static final List<Map<String, Long>>failedJobList = new ArrayList<Map<String, Long>>();
 	
-	public static List<Map<String, String>> getMovedObjectList() {
-		return movedObjectList;
-	}
+	// public static List<Map<String, String>> getMovedObjectList() {
+	// 	return movedObjectList;
+	// }
 
-	public static List<Map<String, Long>> getMovedJobList() {
-		return movedJobList;
-	}
+	// public static List<Map<String, Long>> getMovedJobList() {
+	// 	return movedJobList;
+	// }
 
-	public static List<Map<String, String>> getFailedObjectList() {
-		return failedObjectList;
-	}
+	// public static List<Map<String, String>> getFailedObjectList() {
+	// 	return failedObjectList;
+	// }
 
-	public static List<Map<String, Long>> getFailedJobList() {
-		return failedJobList;
-	}
+	// public static List<Map<String, Long>> getFailedJobList() {
+	// 	return failedJobList;
+	// }
 
     private static final CharMatcher VALID_BUCKET_CHAR =
 			CharMatcher.inRange('a', 'z')
@@ -118,6 +120,40 @@ public class Utils {
         logger.error("failed insertMoveObject. path={}", path);
     }
 
+	public static long insertMoveObject(String jobId, ObjectListing objectListing) {
+		long totalSize = 0;
+        for (int i = 0; i < RETRY_COUNT; i++) {
+            if ((totalSize = getDBInstance().insertMoveObject(jobId, objectListing)) > 0) {
+				return totalSize;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+        }
+        logger.error("failed insertMoveObject. path={}", objectListing.toString());
+		return totalSize;
+    }
+
+	public static long insertMoveObject(String jobId, List<MoveData> list) {
+		long totalSize = 0;
+        for (int i = 0; i < RETRY_COUNT; i++) {
+            if ((totalSize = getDBInstance().insertMoveObject(jobId, list)) > 0) {
+				return totalSize;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+        }
+        logger.error("failed insertMoveObject. path={}", list.toString());
+		return totalSize;
+	}
+
 	public static void insertMoveObjectVersion(String jobId, boolean isFile, String mTime, long size, String path, String versionId, String etag, String multipartInfo, String tag, boolean isDelete, boolean isLatest) {
 		for (int i = 0; i < RETRY_COUNT; i++) {
 			if (getDBInstance().insertMoveObjectVersioning(jobId, isFile, mTime, size, path, versionId, etag, multipartInfo, tag, isDelete, isLatest)) {
@@ -134,9 +170,76 @@ public class Utils {
 		logger.error("failed insertMoveObjectVersioning. path={}", path);
 	}
 
+	public static long insertRerunObject(String jobId, ObjectListing objectListing) {
+		long totalSize = -1;
+        for (int i = 0; i < RETRY_COUNT; i++) {
+            if ((totalSize = getDBInstance().insertRerunObject(jobId, objectListing)) > 0) {
+				return totalSize;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+        }
+        logger.error("failed insertMoveObject. path={}", objectListing.toString());
+		return totalSize;
+    }
+
+	public static long insertMoveObjectVersion(String jobId, VersionListing versionListing) {
+		long totalSize = -1;
+        for (int i = 0; i < RETRY_COUNT; i++) {
+            if ((totalSize = getDBInstance().insertMoveObjectVersioning(jobId, versionListing)) > 0) {
+				return totalSize;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+        }
+        logger.error("failed insertMoveObject. path={}", versionListing.toString());
+		return totalSize;
+	}
+
+	public static long insertRerunObjectVersion(String jobId, VersionListing versionListing) {
+		long totalSize = -1;
+        for (int i = 0; i < RETRY_COUNT; i++) {
+            if ((totalSize = getDBInstance().insertRerunObjectVersioning(jobId, versionListing)) > 0) {
+				return totalSize;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+        }
+        logger.error("failed insertMoveObject. path={}", versionListing.toString());
+		return totalSize;
+	}
+
     public static void updateJobInfo(String jobId, long size) {
 		for (int i = 0; i < RETRY_COUNT; i++) {
 			if (getDBInstance().updateJobInfo(jobId, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+
+		logger.error("failed updateJobInfo. size={}", size);
+	}
+
+	public static void updateJobInfo(String jobId, int count, long size) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobInfo(jobId, count, size)) {
 				return;
 			} else {
 				try {
@@ -185,6 +288,22 @@ public class Utils {
     public static void updateJobRerunInfo(String jobId, long size) {
 		for (int i = 0; i < RETRY_COUNT; i++) {
 			if (getDBInstance().updateJobRerunInfo(jobId, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+
+		logger.error("failed updateJobInfo. size={}", size);
+	}
+
+	public static void updateJobRerunInfo(String jobId, int count, long size) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobRerunInfo(jobId, count, size)) {
 				return;
 			} else {
 				try {
@@ -272,6 +391,16 @@ public class Utils {
 		logger.error("failed updateObjectMove. path={}", path);
 	}
 
+	public static void updateObjectRerun(String jobId, String path, String versionId) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateObjectRerun(jobId, path, versionId)) {
+				return;
+			}
+		}
+
+		logger.error("failed updateObjectMove. path={}", path);
+	}
+
 	public static void updateToMoveObjectVersion(String jobId, String mTime, long size, String path, String versionId) {
 		for (int i = 0; i < RETRY_COUNT; i++) {
 			if (getDBInstance().updateToMoveObjectVersion(jobId, mTime, size, path, versionId)) {
@@ -347,34 +476,48 @@ public class Utils {
 		}
 	}
 
-	private static void addMovedObjectList(String path, String versionId) {
-		Map<String, String> map = new HashMap<String, String>();
-		map.put("path", path);
-		map.put("versionId", versionId);
+	// private static void addMovedObjectList(String path, String versionId) {
+	// 	Map<String, String> map = new HashMap<String, String>();
+	// 	map.put("path", path);
+	// 	map.put("versionId", versionId);
 
-		movedObjectList.add(map);
-	}
+	// 	movedObjectList.add(map);
+	// }
 
-	private static void addMovedJobList(long size) {
-		Map<String, Long> map = new HashMap<String, Long>();
-		map.put("size", Long.valueOf(size));
+	// private static void addMovedJobList(long size) {
+	// 	Map<String, Long> map = new HashMap<String, Long>();
+	// 	map.put("size", Long.valueOf(size));
 
-		movedJobList.add(map);
-	}
+	// 	movedJobList.add(map);
+	// }
 
-	private static void addFailedObjectList(String path, String versionId) {
-		Map<String, String> map = new HashMap<String, String>();
-		map.put("path", path);
-		map.put("versionId", versionId);
+	// private static void addFailedObjectList(String path, String versionId) {
+	// 	Map<String, String> map = new HashMap<String, String>();
+	// 	map.put("path", path);
+	// 	map.put("versionId", versionId);
 
-		failedObjectList.add(map);
-	}
+	// 	failedObjectList.add(map);
+	// }
 
-	private static void addFailedJobList(long size) {
-		Map<String, Long> map = new HashMap<String, Long>();
-		map.put("size", Long.valueOf(size));
+	// private static void addFailedJobList(long size) {
+	// 	Map<String, Long> map = new HashMap<String, Long>();
+	// 	map.put("size", Long.valueOf(size));
 
-		failedJobList.add(map);
+	// 	failedJobList.add(map);
+	// }
+
+	public static void updateJobResult(String jobId, boolean success, String path, String versionId, long size, boolean isRerun) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobResult(jobId, success, path, versionId, size, isRerun)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
 	}
 
 	public static void updateJobMoved(String jobId, long size) {
@@ -389,8 +532,24 @@ public class Utils {
 				}
 			}
 		}
-		logger.error("failed update move info to Job table(size={})", size);
-		addMovedJobList(size);
+		// logger.error("failed update move info to Job table(size={})", size);
+		// addMovedJobList(size);
+	}
+
+	public static void updateJobMoved(String jobId, int count, long size) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobMoved(jobId, count, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+		// logger.error("failed update move info to Job table(size={})", size);
+		// addMovedJobList(size);
 	}
 
 	public static void updateObjectMoveEvent(String jobId, String path, String versionId) {
@@ -405,8 +564,56 @@ public class Utils {
 				}
 			}
 		}
-		logger.error("failed update move info. {}:{}", path, versionId);
-		addMovedObjectList(path, versionId);
+		// logger.error("failed update move info. {}:{}", path, versionId);
+		// addMovedObjectList(path, versionId);
+	}
+
+	public static void updateObjectMoveEvent(String jobId, List<HashMap<String, Object>> list) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateObjectMoveComplete(jobId, list)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+		// logger.error("failed update move info. {}:{}", path, versionId);
+		// addMovedObjectList(path, versionId);
+	}
+	
+	public static void updateObjectRerunEvent(String jobId, String path, String versionId) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateObjectRerunComplete(jobId, path, versionId)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+		// logger.error("failed update move info. {}:{}", path, versionId);
+		// addMovedObjectList(path, versionId);
+	}
+
+	public static void updateObjectRerunEvent(String jobId, List<HashMap<String, Object>> list) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateObjectRerunComplete(jobId, list)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+		// logger.error("failed update move info. {}:{}", path, versionId);
+		// addMovedObjectList(path, versionId);
 	}
 
 	public static void updateObjectVersionMoveEventFailed(String jobId, String path, String versionId, String errorCode, String errorDesc) {
@@ -421,8 +628,40 @@ public class Utils {
 				}
 			}
 		}
-		logger.error("failed UpdateObjectVersionMoveEventFailed. {}:{}", path, versionId);
-		addFailedObjectList(path, versionId);
+		// logger.error("failed UpdateObjectVersionMoveEventFailed. {}:{}", path, versionId);
+		// addFailedObjectList(path, versionId);
+	}
+
+	public static void updateObjectVersionMoveEventFailed(String jobId, List<HashMap<String, Object>> list) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateObjectMoveEventFailed(jobId, list)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+		// logger.error("failed UpdateObjectVersionMoveEventFailed. {}:{}", path, versionId);
+		// addFailedObjectList(path, versionId);
+	}
+
+	public static void updateObjectRerunEventFailed(String jobId, List<HashMap<String, Object>> list) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateObjectRerunEventFailed(jobId, list)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+		// logger.error("failed UpdateObjectVersionMoveEventFailed. {}:{}", path, versionId);
+		// addFailedObjectList(path, versionId);
 	}
 
 	public static void updateJobFailedInfo(String jobId, long size) {
@@ -437,8 +676,24 @@ public class Utils {
 				}
 			}
 		}
-		logger.error("failed UpdateJobFailedInfo. {}", size);
-		addFailedJobList(size);
+		// logger.error("failed UpdateJobFailedInfo. {}", size);
+		// addFailedJobList(size);
+	}
+
+	public static void updateJobFailedInfo(String jobId, int count, long size) {
+		for (int i = 0; i < RETRY_COUNT; i++) {
+			if (getDBInstance().updateJobFailedInfo(jobId, count, size)) {
+				return;
+			} else {
+				try {
+					Thread.sleep(5);
+				} catch (InterruptedException e) {
+					logger.error(e.getMessage());
+				}
+			}
+		}
+		// logger.error("failed UpdateJobFailedInfo. {}", size);
+		// addFailedJobList(size);
 	}
 
 	public static MoverDB getDBInstance() {
@@ -454,5 +709,19 @@ public class Utils {
 		}
 		
 		return moverDB;
+	}
+
+	public static boolean isExistMoveTable(String db, String jobId) {
+		if (getDBInstance().isExistMoveTable(db, jobId)) {
+			return true;
+		}
+		return false;
+	}
+
+	public static boolean isExistRerunTable(String db, String jobId) {
+		if (getDBInstance().isExistRerunTable(db, jobId)) {
+			return true;
+		}
+		return false;
 	}
 }

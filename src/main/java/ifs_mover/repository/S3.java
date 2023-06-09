@@ -13,6 +13,7 @@ package ifs_mover.repository;
 import java.io.InputStream;
 import java.util.List;
 
+import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.AccessControlList;
 import com.amazonaws.services.s3.model.CompleteMultipartUploadResult;
 import com.amazonaws.services.s3.model.ObjectMetadata;
@@ -21,19 +22,16 @@ import com.amazonaws.services.s3.model.PutObjectResult;
 import com.amazonaws.services.s3.model.Tag;
 
 public interface S3 {
+    public AmazonS3 getClient();
     void setVersioning();
     void setBucketVersioning(String status);
-    String startMultipart(String bucket, String key, ObjectMetadata objectMetadata);
-    String uploadPart(String bucket, String key, String uploadId, InputStream is, int partNumber, long partSize);
-    // String completeMultipart(String bucket, String key, String uploadId, List<PartETag> list);
-    CompleteMultipartUploadResult completeMultipart(String bucket, String key, String uploadId, List<PartETag> list);
-    void setTagging(String bucket, String key, String versionId, List<Tag> tagSet);
-    void setAcl(String bucket, String key, String versionId, AccessControlList acl);
-    // String putObject(boolean isFile, String bucket, String key, ObjectData data, long size);
-    // String putObject(String bucketName, String key, InputStream input, ObjectMetadata metadata);
-    PutObjectResult putObject(boolean isFile, String bucket, String key, ObjectData data, long size);
-    PutObjectResult putObject(String bucketName, String key, InputStream input, ObjectMetadata metadata);
-
-    void deleteObject(String bucket, String key, String versionId);
+    String startMultipart(AmazonS3 client, String bucket, String key, ObjectMetadata objectMetadata);
+    String uploadPart(AmazonS3 client, String bucket, String key, String uploadId, InputStream is, int partNumber, long partSize);
+    CompleteMultipartUploadResult completeMultipart(AmazonS3 client, String bucket, String key, String uploadId, List<PartETag> list);
+    void setTagging(AmazonS3 client, String bucket, String key, String versionId, List<Tag> tagSet);
+    void setAcl(AmazonS3 client, String bucket, String key, String versionId, AccessControlList acl);
+    PutObjectResult putObject(AmazonS3 client, boolean isFile, String bucket, String key, ObjectData data, long size);
+    PutObjectResult putObject(AmazonS3 client, String bucketName, String key, InputStream input, ObjectMetadata metadata);
+    void deleteObject(AmazonS3 client, String bucket, String key, String versionId);
 }
 

@@ -31,8 +31,11 @@ import org.openstack4j.openstack.OSFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.AccessControlList;
 import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.ServerSideEncryptionConfiguration;
+import com.amazonaws.services.s3.model.Tag;
 
 import ifs_mover.Config;
 import ifs_mover.SyncMode;
@@ -201,7 +204,6 @@ public class Swift implements Repository {
             } else {
                 logger.error("Either domainId or donmainName must be entered.");
                 errMessage = "Either domainId or donmainName must be entered.";
-                // DBManager.insertErrorJob(jobId, errMessage);
                 Utils.getDBInstance().insertErrorJob(jobId, errMessage);
                 return SWIFT_DOMAIN_VALUE_EMPTY;
             }
@@ -217,7 +219,6 @@ public class Swift implements Repository {
             } else {
                 logger.error("Either projectId or projectName must be entered.");
                 errMessage = "Either projectId or projectName must be entered.";
-                // DBManager.insertErrorJob(jobId, errMessage);
                 Utils.getDBInstance().insertErrorJob(jobId, errMessage);
                 return SWIFT_PROJECT_VALUE_EMPTY;
             }
@@ -225,7 +226,6 @@ public class Swift implements Repository {
 
         clientV3 = getConnection();
         if (clientV3 == null) {
-            // DBManager.insertErrorJob(jobId, errMessage);
             Utils.getDBInstance().insertErrorJob(jobId, errMessage);
             return SWIFT_AUTH_ERROR;
         }
@@ -605,7 +605,7 @@ public class Swift implements Repository {
     }
 
     @Override
-    public ObjectData getObject(String bucket, String key, String versionId) {
+    public ObjectData getObject(AmazonS3 s3Client, String bucket, String key, String versionId) {
         ObjectData data = new ObjectData();
         while (true) {
             try {
@@ -628,7 +628,7 @@ public class Swift implements Repository {
     }
 
     @Override
-    public ObjectData getObject(String bucket, String key, String versionId, long start, long end) {
+    public ObjectData getObject(AmazonS3 s3Client, String bucket, String key, String versionId, long start, long end) {
         ObjectData data = new ObjectData();
         DownloadOptions options = DownloadOptions.create();
         options.range(Range.from(start, end));
@@ -657,13 +657,13 @@ public class Swift implements Repository {
     }
 
     @Override
-    public ObjectMetadata getMetadata(String bucket, String key, String versionId) {
+    public ObjectMetadata getMetadata(AmazonS3 client, String bucket, String key, String versionId) {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
-    public ObjectData getObject(String bucket, String key, String versionId, long start) {
+    public ObjectData getObject(AmazonS3 client, String bucket, String key, String versionId, long start) {
         // TODO Auto-generated method stub
         return null;
     }
@@ -687,8 +687,44 @@ public class Swift implements Repository {
     }
 
     @Override
-    public AccessControlList getAcl(String bucket, String key, String versionId) {
+    public AccessControlList getAcl(AmazonS3 client, String bucket, String key, String versionId) {
         // TODO Auto-generated method stub
         return null;
+    }
+
+    @Override
+    public List<Tag> getTagging(AmazonS3 client, String bucket, String key, String versionId) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public AmazonS3 createS3Clients() {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'createS3Clients'");
+    }
+
+    @Override
+    public void setBucketEncryption(ServerSideEncryptionConfiguration encryption) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'setBucketEncryption'");
+    }
+
+    @Override
+    public ServerSideEncryptionConfiguration getBucketEncryption() {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getBucketEncryption'");
+    }
+
+    @Override
+    public String getBucketPolicy() {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getBucketPolicy'");
+    }
+
+    @Override
+    public void makeObjectList(boolean isRerun, boolean targetVersioning, String inventoryFileName) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'makeObjectList'");
     }
 }

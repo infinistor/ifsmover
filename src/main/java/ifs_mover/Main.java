@@ -30,13 +30,15 @@ import ifs_mover.db.MariaDB;
 import ifs_mover.repository.Repository;
 
 public class Main {
+	private final static String VERSION = "0.3.0";
+
 	private static final Logger logger = LoggerFactory.getLogger(Main.class);
 	private static final String JOBID_PATH = "./.jobId";
 	private static final int THREAD_COUNT = 5;
 	
-	private static final long UNIT_G = (1024 * 1024 * 1024);
-	private static final long UNIT_M = (1024 * 1024);
-	private static final long UNIT_K = 1024;
+	private static final long UNIT_G = (1000 * 1000 * 1000);
+	private static final long UNIT_M = (1000 * 1000);
+	private static final long UNIT_K = 1000;
 	
 	private static final int STATE_INIT = 0;
 	private static final int STATE_MOVE = 1;
@@ -65,6 +67,12 @@ public class Main {
 	private static final String FORMAT_B = "%-10s : %,14d/ %,10dB";
 
 	public static void main(String[] args) {
+		if (args.length == 1) {
+			if (args[0].equals("-v")) {
+				System.out.println("ifs_mover version : " + VERSION);
+				System.exit(0);
+			}
+		}
 		
 		IMOptions options = new IMOptions(args);
 		options.handleOptions();
@@ -82,6 +90,7 @@ public class Main {
 		if (threadCount <= 0) {
 			threadCount = THREAD_COUNT;
 		}
+		String inventoryFileName = options.getInventoryFileName();
 		
 		// DBManager.init();
 		// String directoryName = System.getProperty("user.dir");
@@ -89,13 +98,15 @@ public class Main {
 
 		MoverConfig config = MoverConfig.getInstance();
 		config.configure();
-		logger.info("db init ...");
+		logger.info("db init ... pool size : {}", config.getDbPoolSize());
 		try {
 			Utils.getDBInstance().init(config.getDbHost(), config.getDbPort(), config.getDatabase(), config.getDbUser(), config.getDbPass(), config.getDbPoolSize());
 		} catch (Exception e) {
 			logger.error(e.getMessage());
 			System.exit(-1);
 		}
+
+		
 
 		// disabling the integrity verification
 		// System.setProperty(SkipMd5CheckStrategy.DISABLE_GET_OBJECT_MD5_VALIDATION_PROPERTY,"true");
@@ -109,6 +120,7 @@ public class Main {
 				.threadCount(threadCount)
 				.type(options.getType())
 				.isRerun(false)
+				// .inventoryFileName(inventoryFileName)
 				.build();
 			
 			checkObjectMover.check();
@@ -133,6 +145,7 @@ public class Main {
 					.threadCount(threadCount)
 					.type(options.getType())
 					.isRerun(false)
+					// .inventoryFileName(inventoryFileName)
 					.build();
 			objectMover.init();
 			Utils.getDBInstance().updateJobState(jobId, type);
@@ -173,8 +186,14 @@ public class Main {
 			// DBManager.dropMoveObjectIndex(jobId);
 			// DBManager.dropMoveObjectTable(jobId);
 			// DBManager.updateJobState(jobId, type);
-			Utils.getDBInstance().dropMoveObjectIndex(jobId);
-			Utils.getDBInstance().dropMoveObjectTable(jobId);
+			if (Utils.getDBInstance().isExistMoveTable(config.getDatabase(), jobId)) {
+				Utils.getDBInstance().dropMoveObjectIndex(jobId);
+				Utils.getDBInstance().dropMoveObjectTable(jobId);
+			}
+			if (Utils.getDBInstance().isExistRerunTable(config.getDatabase(), jobId)) {
+				Utils.getDBInstance().dropRerunObjectIndex(jobId);
+				Utils.getDBInstance().dropRerunObjectTable(jobId);
+			}
 			Utils.getDBInstance().updateJobState(jobId, type);
 			logger.info(IFS_MOVER_END, pid);
 			break;
@@ -191,8 +210,6 @@ public class Main {
 				System.exit(-1);
 			}
 
-			Utils.getDBInstance().updateJobState(jobId, IMOptions.WORK_TYPE.RERUN);
-			
 			String pidOfRunJob = Utils.getDBInstance().getProcessId(jobId);
 			
 			if (pidOfRunJob != null) {
@@ -204,22 +221,47 @@ public class Main {
 				}
 			}
 
+			int job_state = Utils.getDBInstance().getJobState(jobId);
+
+			Utils.getDBInstance().updateJobState(jobId, IMOptions.WORK_TYPE.RERUN);
+			if (Utils.getDBInstance().isExistMoveTable(config.getDatabase(), jobId)) {
+				// job complete
+				if (job_state == 4) {
+					if (Utils.getDBInstance().isExistRerunTable(config.getDatabase(), jobId)) {
+						Utils.getDBInstance().dropMoveObjectIndex(jobId);
+						Utils.getDBInstance().dropMoveObjectTable(jobId);
+						Utils.getDBInstance().renameTable(jobId);
+					} 
+				} else {
+					if (Utils.getDBInstance().isExistRerunTable(config.getDatabase(), jobId)) {
+						Utils.getDBInstance().dropRerunObjectIndex(jobId);
+						Utils.getDBInstance().dropRerunObjectTable(jobId);
+					}
+				}
+				Utils.getDBInstance().createRerunObjectTable(jobId);
+			} else {
+				logger.error("check job_id({}) : There is no move table.", jobId);
+				System.exit(-1);
+			}
+
 			ObjectMover rerunObjectMover = new ObjectMover.Builder(jobId)
 					.sourceConfig(options.getSourceConfig())
 					.targetConfig(options.getTargetConfig())
 					.threadCount(threadCount)
 					.type(job_type)
 					.isRerun(true)
+					// .inventoryFileName(inventoryFileName)
 					.build();
 
 			Utils.getDBInstance().updateJobStart(jobId);
 			Utils.getDBInstance().setProcessId(jobId, pid);
 			Utils.getDBInstance().updateJobRerun(jobId);
-			Utils.getDBInstance().updateObjectsRerun(jobId);
+			// Utils.getDBInstance().updateObjectsRerun(jobId);
 
 			rerunObjectMover.init();
 			Utils.getDBInstance().updateJobState(jobId, IMOptions.WORK_TYPE.RERUN_MOVE);
 			rerunObjectMover.moveObjects();
+			Utils.getDBInstance().deleteRerunTableForDeletedObjects(jobId);
 			Utils.getDBInstance().updateJobState(jobId, IMOptions.WORK_TYPE.COMPLETE);
 			Utils.getDBInstance().updateJobEnd(jobId);
 			logger.info("IFS_MOVER({}) RERUN END", pid);
@@ -430,607 +472,7 @@ public class Main {
 				if (objectsCount == 0) {
 					percent = 0.0;
 				} else {
-					percent = (((double)skipObjectsSize + (double)movedObjectsSize + (double)failedSize) / (double) objectsSize) * 100;
-				}
-				
-				unitSize = (double)objectsSize / UNIT_G;
-				
-				if (unitSize > 1.0) {
-					unitMove = (double)movedObjectsSize / UNIT_G;
-					if (unitMove > 1.0) {
-						System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fG\n%-10s : %,14d/ %,10.2fG", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-					} else {
-						unitMove = (double) movedObjectsSize / UNIT_M;
-						if (unitMove > 1.0) {
-							System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fG\n%-10s : %,14d/ %,10.2fM", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-						} else {
-							unitMove = (double) movedObjectsSize / UNIT_K;
-							if (unitMove > 1.0) {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fG\n%-10s : %,14d/ %,10.2fK", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-							} else {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fG\n%-10s : %,14d/ %,10dB", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, movedObjectsSize));
-							}
-						}
-					}
-				} else {
-					unitSize = (double)objectsSize / UNIT_M;
-					if (unitSize > 1.0) {
-						unitMove = (double)movedObjectsSize / UNIT_M;
-						if (unitMove > 1.0) {
-							System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fM\n%-10s : %,14d/ %,10.2fM", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-						} else {
-							unitMove = (double)movedObjectsSize / UNIT_K;
-							if (unitMove > 1.0) {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fM\n%-10s : %,14d/ %,10.2fK", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-							} else {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fM\n%-10s : %,14d/ %,10dB", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, movedObjectsSize));
-							}
-						}
-					} else {
-						unitSize = (double)objectsSize / UNIT_K;
-						if (unitSize > 1.0) {
-							unitMove = (double)movedObjectsSize / UNIT_K;
-							if (unitMove > 1.0) {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fK\n%-10s : %,14d/ %,10.2fK", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-							} else {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fK\n%-10s : %,14d/ %,10dB", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, movedObjectsSize));
-							}
-						} else {
-							System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10dB\n%-10s : %,14d/ %,10dB", PROGRESS, percent, TOTAL, objectsCount, objectsSize, MOVED, movedObjectsCount, movedObjectsSize));
-						}
-					}
-				}
-				
-				if (skipObjectsCount > 0) {
-					unitSkip = (double)skipObjectsSize / UNIT_G;
-					if (unitSkip > 1.0) {
-						System.out.println(String.format(FORMAT_G, SKIPPED, skipObjectsCount, unitSkip));
-					} else {
-						unitSkip = (double)skipObjectsSize / UNIT_M;
-						if (unitSkip > 1.0) {
-							System.out.println(String.format(FORMAT_M, SKIPPED, skipObjectsCount, unitSkip));
-						} else {
-							unitSkip = (double)skipObjectsSize / UNIT_K;
-							if (unitSkip > 1.0) {
-								System.out.println(String.format(FORMAT_K, SKIPPED, skipObjectsCount, unitSkip));
-							} else {
-								System.out.println(String.format(FORMAT_B, SKIPPED, skipObjectsCount, skipObjectsSize));
-							}
-						}
-					}
-				} else {
-					System.out.println(String.format(FORMAT_B, SKIPPED, skipObjectsCount, skipObjectsSize));
-				}
-				
-				if (failedCount > 0) {
-					unitFailed = (double)failedSize / UNIT_G;
-					if (unitFailed > 1.0) {
-						System.out.println(String.format(FORMAT_G, FAILED, failedCount, unitFailed));
-					} else {
-						unitFailed = (double)failedSize / UNIT_M;
-						if (unitFailed > 1.0) {
-							System.out.println(String.format(FORMAT_M, FAILED, failedCount, unitFailed));
-						} else {
-							unitFailed = (double)failedSize / UNIT_K;
-							if (unitFailed > 1.0) {
-								System.out.println(String.format(FORMAT_K, FAILED, failedCount, unitFailed));
-							} else {
-								System.out.println(String.format(FORMAT_B, FAILED, failedCount, failedSize));
-							}
-						}
-					}
-				} else {
-					System.out.println(String.format(FORMAT_B, FAILED, failedCount, failedSize));
-				}
-
-				if (deleteObjectCount > 0) {
-					unitDelete = (double)deleteObjectSize / UNIT_G;
-					if (unitDelete > 1.0) {
-						System.out.println(String.format(FORMAT_G, DELETED, deleteObjectCount, unitDelete));
-					} else {
-						unitDelete = (double)deleteObjectSize / UNIT_M;
-						if (unitDelete > 1.0) {
-							System.out.println(String.format(FORMAT_M, DELETED, deleteObjectCount, unitDelete));
-						} else {
-							unitDelete = (double)deleteObjectSize / UNIT_K;
-							if (unitDelete > 1.0) {
-								System.out.println(String.format(FORMAT_K, DELETED, deleteObjectCount, unitDelete));
-							} else {
-								System.out.println(String.format(FORMAT_B, DELETED, deleteObjectCount, deleteObjectSize));
-							}
-						}
-					}
-				}
-			} 
-			System.out.println();
-		}
-	}
-
-	private static void statusSrcBucket(String bucket) {
-		String jobId;
-		int jobState;
-		String jobType;
-		String sourcePoint;
-		String targetPoint;
-		long objectsCount;
-		long objectsSize;
-		long movedObjectsCount;
-		long movedObjectsSize;
-		long failedCount;
-		long failedSize;
-		long skipObjectsCount;
-		long skipObjectsSize;
-		long deleteObjectCount;
-		long deleteObjectSize;
-		String startTime;
-		String endTime;
-		String errorDesc;
-		
-		double unitSize = 0.0;
-		double unitMove = 0.0;
-		double unitFailed = 0.0;
-		double unitSkip = 0.0;
-		double unitDelete = 0.0;
-		double percent = 0.0;
-	
-		// List<Map<String, String>> list = DBManager.status();
-		List<HashMap<String, Object>> list = Utils.getDBInstance().statusSrcBucket(bucket);
-	
-		if (list == null) {
-			System.out.println("No jobs were created.");
-			return;
-		}
-	
-		for (HashMap<String, Object> info : list) {
-			jobId = String.valueOf((int) info.get(MariaDB.JOB_TABLE_COLUMN_JOB_ID));
-			jobState = (int) info.get(MariaDB.JOB_TABLE_COLUMN_JOB_STATE);
-			jobType = (String) info.get(MariaDB.JOB_TABLE_COLUMN_JOB_TYPE);
-			sourcePoint = (String) info.get(MariaDB.JOB_TABLE_COLUMN_SOURCE_POINT);
-			targetPoint = (String) info.get(MariaDB.JOB_TABLE_COLUMN_TARGET_POINT);
-			objectsCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_OBJECTS_COUNT);
-			objectsSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_OBJECTS_SIZE);
-			movedObjectsCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_MOVED_OBJECTS_COUNT);
-			movedObjectsSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_MOVED_OBJECTS_SIZE);
-			failedCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_FAILED_COUNT);
-			failedSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_FAILED_SIZE);
-			skipObjectsCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_SKIP_OBJECTS_COUNT);
-			skipObjectsSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_SKIP_OBJECTS_SIZE);
-			deleteObjectCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_DELETE_OBJECT_COUNT);
-			deleteObjectSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_DELETE_OBJECT_SIZE);
-			startTime = (String) info.get(MariaDB.JOB_TABLE_COLUMN_START);
-			endTime = (String) info.get(MariaDB.JOB_TABLE_COLUMN_END);
-			errorDesc = (String) info.get(MariaDB.JOB_TABLE_COLUMN_ERROR_DESC);
-	
-			if (jobState == STATE_REMOVE) {
-				continue;
-			}
-	
-			switch (jobState) {
-			case STATE_INIT:
-				System.out.println(JOB_IS + String.format(FORMAT_START, jobId, "INIT...", startTime));
-				break;
-				
-			case STATE_MOVE:
-				System.out.println(JOB_IS + String.format(FORMAT_START, jobId, "MOVE...", startTime));
-				break;
-				
-			case STATE_COMPLETE:
-				System.out.println(JOB_IS + String.format(FORMAT_START_END, jobId, "COMPLETED", startTime, endTime));
-				break;
-				
-			case STATE_STOP:
-				System.out.println(JOB_IS + String.format(FORMAT_START_END, jobId, "STOPPED", startTime, endTime));
-				break;
-				
-			case STATE_RERUN:
-				System.out.println(JOB_IS + String.format("%-5s\t%-15s%s", jobId, "RERUN INIT...", startTime));
-				break;
-				
-			case STATE_RERUN_MOVE:
-				System.out.println(JOB_IS + String.format(FORMAT_START, jobId, "RERUN MOVE", startTime));
-				break;
-				
-			case STATE_ERROR:
-				System.out.println(JOB_IS + String.format(FORMAT_START, jobId, "ERROR", startTime));
-				break;
-				
-			default:
-				break;
-			}
-			
-			if (Repository.IFS_FILE.compareToIgnoreCase(jobType) == 0) {
-				System.out.println("File : " + String.format("%s -> Object : %s", sourcePoint, targetPoint));
-			} else {
-				System.out.println("Object : " + String.format("%s -> Object : %s", sourcePoint, targetPoint));
-			}
-			
-			if (jobState == STATE_ERROR) {
-				System.out.println("Error : " + errorDesc);
-				System.out.println();
-				continue;
-			}
-	
-			if (jobState == STATE_INIT) {
-				unitSize = (double)objectsSize / UNIT_G;
-				if (unitSize > 1.0) {
-					System.out.println(String.format(FORMAT_G, PREPARE, objectsCount, unitSize));
-				} else {
-					unitSize = (double)objectsSize / UNIT_M;
-					if (unitSize > 1.0) {
-						System.out.println(String.format(FORMAT_M, PREPARE, objectsCount, unitSize));
-					} else {
-						unitSize = (double)objectsSize / UNIT_K;
-						if (unitSize > 1.0) {
-							System.out.println(String.format(FORMAT_K, PREPARE, objectsCount, unitSize));
-						} else {
-							System.out.println(String.format(FORMAT_B, PREPARE, objectsCount, objectsSize));
-						}
-					}
-				}
-			} else if (jobState == STATE_RERUN) {
-				unitSize = (double)objectsSize / UNIT_G;
-				if (unitSize > 1.0) {
-					System.out.println(String.format(FORMAT_G, PREPARE, objectsCount, unitSize));
-				} else {
-					unitSize = (double)objectsSize / UNIT_M;
-					if (unitSize > 1.0) {
-						System.out.println(String.format(FORMAT_M, PREPARE, objectsCount, unitSize));
-					} else {
-						unitSize = (double)objectsSize / UNIT_K;
-						if (unitSize > 1.0) {
-							System.out.println(String.format(FORMAT_K, PREPARE, objectsCount, unitSize));
-						} else {
-							System.out.println(String.format(FORMAT_B, PREPARE, objectsCount, objectsSize));
-						}
-					}
-				}
-				
-				if (skipObjectsCount > 0) {
-					unitSkip = (double)skipObjectsSize / UNIT_G;
-					if (unitSkip > 1.0) {
-						System.out.println(String.format(FORMAT_G, SKIPPED, skipObjectsCount, unitSkip));
-					} else {
-						unitSkip = (double)skipObjectsSize / UNIT_M;
-						if (unitSkip > 1.0) {
-							System.out.println(String.format(FORMAT_M, SKIPPED, skipObjectsCount, unitSkip));
-						} else {
-							unitSkip = (double)skipObjectsSize / UNIT_K;
-							if (unitSkip > 1.0) {
-								System.out.println(String.format(FORMAT_K, SKIPPED, skipObjectsCount, unitSkip));
-							} else {
-								System.out.println(String.format(FORMAT_B, SKIPPED, skipObjectsCount, skipObjectsSize));
-							}
-						}
-					}
-				} else {
-					System.out.println(String.format(FORMAT_B, SKIPPED, skipObjectsCount, skipObjectsSize));
-				}
-				
-				if (failedCount > 0) {
-					unitFailed = (double)failedSize / UNIT_G;
-					if (unitFailed > 1.0) {
-						System.out.println(String.format(FORMAT_G, FAILED, failedCount, unitFailed));
-					} else {
-						unitFailed = (double)failedSize / UNIT_M;
-						if (unitFailed > 1.0) {
-							System.out.println(String.format(FORMAT_M, FAILED, failedCount, unitFailed));
-						} else {
-							unitFailed = (double)failedSize / UNIT_K;
-							if (unitFailed > 1.0) {
-								System.out.println(String.format(FORMAT_K, FAILED, failedCount, unitFailed));
-							} else {
-								System.out.println(String.format(FORMAT_B, FAILED, failedCount, failedSize));
-							}
-						}
-					}
-				} else {
-					System.out.println(String.format(FORMAT_B, FAILED, failedCount, failedSize));
-				}
-			} else {
-				if (objectsCount == 0) {
-					percent = 0.0;
-				} else {
-					percent = (((double)skipObjectsSize + (double)movedObjectsSize + (double)failedSize) / (double) objectsSize) * 100;
-				}
-				
-				unitSize = (double)objectsSize / UNIT_G;
-				
-				if (unitSize > 1.0) {
-					unitMove = (double)movedObjectsSize / UNIT_G;
-					if (unitMove > 1.0) {
-						System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fG\n%-10s : %,14d/ %,10.2fG", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-					} else {
-						unitMove = (double) movedObjectsSize / UNIT_M;
-						if (unitMove > 1.0) {
-							System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fG\n%-10s : %,14d/ %,10.2fM", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-						} else {
-							unitMove = (double) movedObjectsSize / UNIT_K;
-							if (unitMove > 1.0) {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fG\n%-10s : %,14d/ %,10.2fK", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-							} else {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fG\n%-10s : %,14d/ %,10dB", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, movedObjectsSize));
-							}
-						}
-					}
-				} else {
-					unitSize = (double)objectsSize / UNIT_M;
-					if (unitSize > 1.0) {
-						unitMove = (double)movedObjectsSize / UNIT_M;
-						if (unitMove > 1.0) {
-							System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fM\n%-10s : %,14d/ %,10.2fM", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-						} else {
-							unitMove = (double)movedObjectsSize / UNIT_K;
-							if (unitMove > 1.0) {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fM\n%-10s : %,14d/ %,10.2fK", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-							} else {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fM\n%-10s : %,14d/ %,10dB", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, movedObjectsSize));
-							}
-						}
-					} else {
-						unitSize = (double)objectsSize / UNIT_K;
-						if (unitSize > 1.0) {
-							unitMove = (double)movedObjectsSize / UNIT_K;
-							if (unitMove > 1.0) {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fK\n%-10s : %,14d/ %,10.2fK", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, unitMove));
-							} else {
-								System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10.2fK\n%-10s : %,14d/ %,10dB", PROGRESS, percent, TOTAL, objectsCount, unitSize, MOVED, movedObjectsCount, movedObjectsSize));
-							}
-						} else {
-							System.out.println(String.format("%-10s : %14.2f%%\n%-10s : %,14d/ %,10dB\n%-10s : %,14d/ %,10dB", PROGRESS, percent, TOTAL, objectsCount, objectsSize, MOVED, movedObjectsCount, movedObjectsSize));
-						}
-					}
-				}
-				
-				if (skipObjectsCount > 0) {
-					unitSkip = (double)skipObjectsSize / UNIT_G;
-					if (unitSkip > 1.0) {
-						System.out.println(String.format(FORMAT_G, SKIPPED, skipObjectsCount, unitSkip));
-					} else {
-						unitSkip = (double)skipObjectsSize / UNIT_M;
-						if (unitSkip > 1.0) {
-							System.out.println(String.format(FORMAT_M, SKIPPED, skipObjectsCount, unitSkip));
-						} else {
-							unitSkip = (double)skipObjectsSize / UNIT_K;
-							if (unitSkip > 1.0) {
-								System.out.println(String.format(FORMAT_K, SKIPPED, skipObjectsCount, unitSkip));
-							} else {
-								System.out.println(String.format(FORMAT_B, SKIPPED, skipObjectsCount, skipObjectsSize));
-							}
-						}
-					}
-				} else {
-					System.out.println(String.format(FORMAT_B, SKIPPED, skipObjectsCount, skipObjectsSize));
-				}
-				
-				if (failedCount > 0) {
-					unitFailed = (double)failedSize / UNIT_G;
-					if (unitFailed > 1.0) {
-						System.out.println(String.format(FORMAT_G, FAILED, failedCount, unitFailed));
-					} else {
-						unitFailed = (double)failedSize / UNIT_M;
-						if (unitFailed > 1.0) {
-							System.out.println(String.format(FORMAT_M, FAILED, failedCount, unitFailed));
-						} else {
-							unitFailed = (double)failedSize / UNIT_K;
-							if (unitFailed > 1.0) {
-								System.out.println(String.format(FORMAT_K, FAILED, failedCount, unitFailed));
-							} else {
-								System.out.println(String.format(FORMAT_B, FAILED, failedCount, failedSize));
-							}
-						}
-					}
-				} else {
-					System.out.println(String.format(FORMAT_B, FAILED, failedCount, failedSize));
-				}
-
-				if (deleteObjectCount > 0) {
-					unitDelete = (double)deleteObjectSize / UNIT_G;
-					if (unitDelete > 1.0) {
-						System.out.println(String.format(FORMAT_G, DELETED, deleteObjectCount, unitDelete));
-					} else {
-						unitDelete = (double)deleteObjectSize / UNIT_M;
-						if (unitDelete > 1.0) {
-							System.out.println(String.format(FORMAT_M, DELETED, deleteObjectCount, unitDelete));
-						} else {
-							unitDelete = (double)deleteObjectSize / UNIT_K;
-							if (unitDelete > 1.0) {
-								System.out.println(String.format(FORMAT_K, DELETED, deleteObjectCount, unitDelete));
-							} else {
-								System.out.println(String.format(FORMAT_B, DELETED, deleteObjectCount, deleteObjectSize));
-							}
-						}
-					}
-				}
-			} 
-			System.out.println();
-		}
-	}
-
-	private static void statusDstBucket(String bucket) {
-		String jobId;
-		int jobState;
-		String jobType;
-		String sourcePoint;
-		String targetPoint;
-		long objectsCount;
-		long objectsSize;
-		long movedObjectsCount;
-		long movedObjectsSize;
-		long failedCount;
-		long failedSize;
-		long skipObjectsCount;
-		long skipObjectsSize;
-		long deleteObjectCount;
-		long deleteObjectSize;
-		String startTime;
-		String endTime;
-		String errorDesc;
-		
-		double unitSize = 0.0;
-		double unitMove = 0.0;
-		double unitFailed = 0.0;
-		double unitSkip = 0.0;
-		double unitDelete = 0.0;
-		double percent = 0.0;
-	
-		// List<Map<String, String>> list = DBManager.status();
-		List<HashMap<String, Object>> list = Utils.getDBInstance().statusDstBucket(bucket);
-	
-		if (list == null) {
-			System.out.println("No jobs were created.");
-			return;
-		}
-	
-		for (HashMap<String, Object> info : list) {
-			jobId = String.valueOf((int) info.get(MariaDB.JOB_TABLE_COLUMN_JOB_ID));
-			jobState = (int) info.get(MariaDB.JOB_TABLE_COLUMN_JOB_STATE);
-			jobType = (String) info.get(MariaDB.JOB_TABLE_COLUMN_JOB_TYPE);
-			sourcePoint = (String) info.get(MariaDB.JOB_TABLE_COLUMN_SOURCE_POINT);
-			targetPoint = (String) info.get(MariaDB.JOB_TABLE_COLUMN_TARGET_POINT);
-			objectsCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_OBJECTS_COUNT);
-			objectsSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_OBJECTS_SIZE);
-			movedObjectsCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_MOVED_OBJECTS_COUNT);
-			movedObjectsSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_MOVED_OBJECTS_SIZE);
-			failedCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_FAILED_COUNT);
-			failedSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_FAILED_SIZE);
-			skipObjectsCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_SKIP_OBJECTS_COUNT);
-			skipObjectsSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_SKIP_OBJECTS_SIZE);
-			deleteObjectCount = (long) info.get(MariaDB.JOB_TABLE_COLUMN_DELETE_OBJECT_COUNT);
-			deleteObjectSize = (long) info.get(MariaDB.JOB_TABLE_COLUMN_DELETE_OBJECT_SIZE);
-			startTime = (String) info.get(MariaDB.JOB_TABLE_COLUMN_START);
-			endTime = (String) info.get(MariaDB.JOB_TABLE_COLUMN_END);
-			errorDesc = (String) info.get(MariaDB.JOB_TABLE_COLUMN_ERROR_DESC);
-	
-			if (jobState == STATE_REMOVE) {
-				continue;
-			}
-	
-			switch (jobState) {
-			case STATE_INIT:
-				System.out.println(JOB_IS + String.format(FORMAT_START, jobId, "INIT...", startTime));
-				break;
-				
-			case STATE_MOVE:
-				System.out.println(JOB_IS + String.format(FORMAT_START, jobId, "MOVE...", startTime));
-				break;
-				
-			case STATE_COMPLETE:
-				System.out.println(JOB_IS + String.format(FORMAT_START_END, jobId, "COMPLETED", startTime, endTime));
-				break;
-				
-			case STATE_STOP:
-				System.out.println(JOB_IS + String.format(FORMAT_START_END, jobId, "STOPPED", startTime, endTime));
-				break;
-				
-			case STATE_RERUN:
-				System.out.println(JOB_IS + String.format("%-5s\t%-15s%s", jobId, "RERUN INIT...", startTime));
-				break;
-				
-			case STATE_RERUN_MOVE:
-				System.out.println(JOB_IS + String.format(FORMAT_START, jobId, "RERUN MOVE", startTime));
-				break;
-				
-			case STATE_ERROR:
-				System.out.println(JOB_IS + String.format(FORMAT_START, jobId, "ERROR", startTime));
-				break;
-				
-			default:
-				break;
-			}
-			
-			if (Repository.IFS_FILE.compareToIgnoreCase(jobType) == 0) {
-				System.out.println("File : " + String.format("%s -> Object : %s", sourcePoint, targetPoint));
-			} else {
-				System.out.println("Object : " + String.format("%s -> Object : %s", sourcePoint, targetPoint));
-			}
-			
-			if (jobState == STATE_ERROR) {
-				System.out.println("Error : " + errorDesc);
-				System.out.println();
-				continue;
-			}
-	
-			if (jobState == STATE_INIT) {
-				unitSize = (double)objectsSize / UNIT_G;
-				if (unitSize > 1.0) {
-					System.out.println(String.format(FORMAT_G, PREPARE, objectsCount, unitSize));
-				} else {
-					unitSize = (double)objectsSize / UNIT_M;
-					if (unitSize > 1.0) {
-						System.out.println(String.format(FORMAT_M, PREPARE, objectsCount, unitSize));
-					} else {
-						unitSize = (double)objectsSize / UNIT_K;
-						if (unitSize > 1.0) {
-							System.out.println(String.format(FORMAT_K, PREPARE, objectsCount, unitSize));
-						} else {
-							System.out.println(String.format(FORMAT_B, PREPARE, objectsCount, objectsSize));
-						}
-					}
-				}
-			} else if (jobState == STATE_RERUN) {
-				unitSize = (double)objectsSize / UNIT_G;
-				if (unitSize > 1.0) {
-					System.out.println(String.format(FORMAT_G, PREPARE, objectsCount, unitSize));
-				} else {
-					unitSize = (double)objectsSize / UNIT_M;
-					if (unitSize > 1.0) {
-						System.out.println(String.format(FORMAT_M, PREPARE, objectsCount, unitSize));
-					} else {
-						unitSize = (double)objectsSize / UNIT_K;
-						if (unitSize > 1.0) {
-							System.out.println(String.format(FORMAT_K, PREPARE, objectsCount, unitSize));
-						} else {
-							System.out.println(String.format(FORMAT_B, PREPARE, objectsCount, objectsSize));
-						}
-					}
-				}
-				
-				if (skipObjectsCount > 0) {
-					unitSkip = (double)skipObjectsSize / UNIT_G;
-					if (unitSkip > 1.0) {
-						System.out.println(String.format(FORMAT_G, SKIPPED, skipObjectsCount, unitSkip));
-					} else {
-						unitSkip = (double)skipObjectsSize / UNIT_M;
-						if (unitSkip > 1.0) {
-							System.out.println(String.format(FORMAT_M, SKIPPED, skipObjectsCount, unitSkip));
-						} else {
-							unitSkip = (double)skipObjectsSize / UNIT_K;
-							if (unitSkip > 1.0) {
-								System.out.println(String.format(FORMAT_K, SKIPPED, skipObjectsCount, unitSkip));
-							} else {
-								System.out.println(String.format(FORMAT_B, SKIPPED, skipObjectsCount, skipObjectsSize));
-							}
-						}
-					}
-				} else {
-					System.out.println(String.format(FORMAT_B, SKIPPED, skipObjectsCount, skipObjectsSize));
-				}
-				
-				if (failedCount > 0) {
-					unitFailed = (double)failedSize / UNIT_G;
-					if (unitFailed > 1.0) {
-						System.out.println(String.format(FORMAT_G, FAILED, failedCount, unitFailed));
-					} else {
-						unitFailed = (double)failedSize / UNIT_M;
-						if (unitFailed > 1.0) {
-							System.out.println(String.format(FORMAT_M, FAILED, failedCount, unitFailed));
-						} else {
-							unitFailed = (double)failedSize / UNIT_K;
-							if (unitFailed > 1.0) {
-								System.out.println(String.format(FORMAT_K, FAILED, failedCount, unitFailed));
-							} else {
-								System.out.println(String.format(FORMAT_B, FAILED, failedCount, failedSize));
-							}
-						}
-					}
-				} else {
-					System.out.println(String.format(FORMAT_B, FAILED, failedCount, failedSize));
-				}
-			} else {
-				if (objectsCount == 0) {
-					percent = 0.0;
-				} else {
-					percent = (((double)skipObjectsSize + (double)movedObjectsSize + (double)failedSize) / (double) objectsSize) * 100;
+					percent = (((double)skipObjectsSize + (double)movedObjectsSize + failedSize) / objectsSize) * 100;
 				}
 				
 				unitSize = (double)objectsSize / UNIT_G;

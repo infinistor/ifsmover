@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true" scanPeriod="30 seconds">
+    <property name="LOG_PATH" value="/var/log/infinistor/mover"/>   
     <appender name="JOB-TRACE" class="ch.qos.logback.classic.sift.SiftingAppender">
         <discriminator class="ch.qos.logback.classic.sift.MDCBasedDiscriminator">
             <key>logFileName</key>
@@ -7,9 +8,9 @@
         </discriminator>
         <sift>
 	        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-		        <file>./log/${logFileName}</file>
+		        <file>${LOG_PATH}/${logFileName}</file>
 		        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-		            <fileNamePattern>./log/${logFileName}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+		            <fileNamePattern>${LOG_PATH}/${logFileName}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
 		            <maxHistory>7</maxHistory>
 		            <maxFileSize>100MB</maxFileSize>
 		        </rollingPolicy>

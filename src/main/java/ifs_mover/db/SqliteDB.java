@@ -26,8 +26,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.sqlite.SQLiteConfig;
 
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.VersionListing;
+
 import ifs_mover.Config;
 import ifs_mover.IMOptions;
+import ifs_mover.MoveData;
 import ifs_mover.IMOptions.WORK_TYPE;
 
 public class SqliteDB implements MoverDB {
@@ -946,10 +950,11 @@ public class SqliteDB implements MoverDB {
 	}
 
 	@Override
-	public List<HashMap<String, Object>> getToMoveObjectsInfo(String jobId, long sequence, long limit) {
+	public List<MoveData> getToMoveObjectsInfo(String jobId, long sequence, long limit) {
 		open();
 		String sql = SQL_GET_MOVE_OBJECT_INFO + jobId + SQL_GET_MOVE_OBJECT_INFO_WHERE + SQL_ORDER_BY_PATH + sequence + ", " + limit;
-		List<HashMap<String, Object>> list = new ArrayList<HashMap<String, Object>>();
+		List<MoveData> list = new ArrayList<MoveData>();
+		/*
 		try (Statement stmt = con.createStatement();
 			ResultSet rs = stmt.executeQuery(sql);) {
 	   		while (rs.next()) {
@@ -978,7 +983,7 @@ public class SqliteDB implements MoverDB {
 		if (list.size() == 0) {
 			return null;
 		} 
-   
+		*/
    		return list;
 	}
 
@@ -1760,6 +1765,212 @@ public class SqliteDB implements MoverDB {
    		// } 
    
    		return false;
+	}
+
+	@Override
+	public long insertMoveObject(String jobId, ObjectListing objectListing) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'insertMoveObject'");
+	}
+
+	@Override
+	public long insertMoveObjectVersioning(String jobId, VersionListing versionListing) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'insertMoveObjectVersioning'");
+	}
+
+	@Override
+	public boolean updateJobInfo(String jobId, int count, long size) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateJobInfo'");
+	}
+
+	@Override
+	public boolean updateJobRerunInfo(String jobId, int count, long size) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateJobRerunInfo'");
+	}
+
+	@Override
+	public void dropRerunObjectIndex(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'dropRerunObjectIndex'");
+	}
+
+	@Override
+	public void dropRerunObjectTable(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'dropRerunObjectTable'");
+	}
+
+	@Override
+	public void createRerunObjectTable(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'createRerunObjectTable'");
+	}
+
+	@Override
+	public long insertRerunObject(String jobId, ObjectListing objectListing) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'insertRerunObject'");
+	}
+
+	@Override
+	public long insertRerunObjectVersioning(String jobId, VersionListing versionListing) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'insertRerunObjectVersion'");
+	}
+
+	@Override
+	public void renameTable(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'renameTable'");
+	}
+
+	@Override
+	public long getMaxSequenceRerun(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'getMaxSequenceRerun'");
+	}
+
+	@Override
+	public List<MoveData> getToRerunObjectsInfo(String jobId, long sequence, long limit) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'getToRerunObjectsInfo'");
+	}
+
+	@Override
+	public List<HashMap<String, Object>> getToRerunDeleteObjectsInfo(String jobId, long sequence, long limit) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'getToRerunDeleteObjectsInfo'");
+	}
+
+	@Override
+	public void updateSkipRerun(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateSkipRerun'");
+	}
+
+	@Override
+	public boolean updateJobRerunSkipInfo(String jobId, long count, long size) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateJobRerunSkipInfo'");
+	}
+
+	@Override
+	public void infoSkipRerun(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'infoSkipRerun'");
+	}
+
+	@Override
+	public boolean isExistMoveTable(String db, String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'isExistMoveTable'");
+	}
+
+	@Override
+	public boolean isExistRerunTable(String db, String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'isExistRerunTable'");
+	}
+
+	@Override
+	public boolean updateObjectRerunComplete(String jobId, String path, String versionId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateObjectRerunComplete'");
+	}
+
+	@Override
+	public boolean updateObjectRerunEventFailed(String jobId, String path, String versionId, String errorCode,
+			String errorMessage) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateObjectRerunEventFailed'");
+	}
+
+	@Override
+	public boolean updateObjectRerun(String jobId, String path, String versionId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateObjectRerun'");
+	}
+
+	@Override
+	public void updateRerunDeleteMarker(String jobId, String path, String versionId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateRerunDeleteMarker'");
+	}
+
+	@Override
+	public void checkDeleteObjectsForReRun(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'checkDeleteObjectsForReRun'");
+	}
+
+	@Override
+	public boolean updateJobMoved(String jobId, int count, long size) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateJobMoved'");
+	}
+
+	@Override
+	public boolean updateJobFailedInfo(String jobId, int count, long size) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateJobFailedInfo'");
+	}
+
+	@Override
+	public boolean updateObjectMoveComplete(String jobId, List<HashMap<String, Object>> list) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateObjectMoveComplete'");
+	}
+
+	@Override
+	public boolean updateObjectRerunComplete(String jobId, List<HashMap<String, Object>> list) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateObjectRerunComplete'");
+	}
+
+	@Override
+	public boolean updateObjectMoveEventFailed(String jobId, List<HashMap<String, Object>> list) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateObjectMoveEventFailed'");
+	}
+
+	@Override
+	public boolean updateObjectRerunEventFailed(String jobId, List<HashMap<String, Object>> list) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateObjectRerunEventFailed'");
+	}
+
+	@Override
+	public List<HashMap<String, Object>> getToMoveObjectsInfoVersioning(String jobId, long sequence, long limit) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'getToMoveObjectsInfoVersioning'");
+	}
+
+	@Override
+	public boolean updateJobResult(String jobId, boolean result, String path, String versionId, long size,
+			boolean isRerun) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'updateJobResult'");
+	}
+
+	@Override
+	public boolean deleteRerunTableForDeletedObjects(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'deleteRerunTableForDeletedObjects'");
+	}
+
+	@Override
+	public int getJobState(String jobId) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'getJobStatus'");
+	}
+
+	@Override
+	public long insertMoveObject(String jobId, List<MoveData> list) {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'insertMoveObject'");
 	}
 
 }

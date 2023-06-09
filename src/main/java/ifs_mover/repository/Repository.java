@@ -12,8 +12,11 @@ package ifs_mover.repository;
 
 import java.util.List;
 
+import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.AccessControlList;
 import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.ServerSideEncryptionConfiguration;
+import com.amazonaws.services.s3.model.Tag;
 
 import ifs_mover.Config;
 import ifs_mover.SyncMode;
@@ -58,14 +61,21 @@ public interface Repository {
     List<String> getBucketList();
     boolean createBuckets(List<String> list);
     void makeObjectList(boolean isRerun, boolean targetVersioning);
+    void makeObjectList(boolean isRerun, boolean targetVersioning, String inventoryFileName);
     void makeTargetObjectList(boolean targetVersioning);
     String setPrefix(String path);
     String setTargetPrefix(String path);
 
-    ObjectMetadata getMetadata(String bucket, String key, String versionId);
-    AccessControlList getAcl(String bucket, String key, String versionId);
+    AmazonS3 createS3Clients(); 
+    ObjectMetadata getMetadata(AmazonS3 client, String bucket, String key, String versionId);
+    AccessControlList getAcl(AmazonS3 client, String bucket, String key, String versionId);
+    List<Tag> getTagging(AmazonS3 client, String bucket, String key, String versionId);
     ObjectData getObject(String path);
-    ObjectData getObject(String bucket, String key, String versionId);
-    ObjectData getObject(String bucket, String key, String versionId, long start);
-    ObjectData getObject(String bucket, String key, String versionId, long start, long end);
+    ObjectData getObject(AmazonS3 client, String bucket, String key, String versionId);
+    ObjectData getObject(AmazonS3 client, String bucket, String key, String versionId, long start);
+    ObjectData getObject(AmazonS3 client, String bucket, String key, String versionId, long start, long end);
+
+    public void setBucketEncryption(ServerSideEncryptionConfiguration encryption);
+    public ServerSideEncryptionConfiguration getBucketEncryption();
+    public String getBucketPolicy();
 }

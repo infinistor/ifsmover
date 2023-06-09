@@ -34,12 +34,15 @@ public class Config {
 	private String secretKey;
 	private String bucket;
 	private String prefix;
-	private String moveSize;
+	private String partSize;
+	private String useMultipartSize;
 	private String versioning;
 	private String sync;
 	private String syncCheck;
 	private String type;
 	private String acl;
+	private String metadata;
+	private String tag;
 	
 	// for openstack swift
 	private String userName;
@@ -57,6 +60,10 @@ public class Config {
 
 	// for acl info
 	private boolean isACL;
+	// for metadata info
+	private boolean isMetadata;
+	// for tag info
+	private boolean isTag;
 
 	private final String MOUNT_POINT = "mountpoint";
 	private final String END_POINT = "endpoint";
@@ -65,11 +72,14 @@ public class Config {
 	private final String SECRET_KEY = "secret";
 	private final String BUCKET = "bucket";
 	private final String PREFIX = "prefix";
-	private final String MOVE_SIZE = "move_size";
+	private final String PART_SIZE = "part_size";
+	private final String MULTIPART_SIZE = "use_multipart";
 	private final String VERSIONING = "versioning";	// ON OFF
 	private final String TARGET_SYNC = "sync";
 	private final String TARGET_SYNC_MODE = "sync_mode";
 	private final String ACL = "acl";
+	private final String METADATA = "metadata";
+	private final String TAG = "tag";
 
 	// for openstack swift support
 	private final String USER_NAME = "user_name";
@@ -83,12 +93,17 @@ public class Config {
 
 	private final String PROTOCOL = "http";
 	private final String ON = "on";
+	private final String OFF = "off";
 	private final String SYNC_MODE_ETAG = "etag";
 	private final String SYNC_MODE_SIZE = "size";
 	private final String SYNC_MODE_EXIST = "exist";
 
-	public Config() {
+	private final long MEGA_BYTES = 1024 * 1024;
+	private final long GIGA_BYTES = 1024 * 1024 * 1024;
+	private final long DEFAULT_PART_SIZE = 100 * MEGA_BYTES;
+	private final long DEFAULT_USE_MULTIPART = 2 * GIGA_BYTES;
 
+	public Config() {
 	}
 
 	public Config(String path) {
@@ -112,7 +127,8 @@ public class Config {
 		bucket = properties.getProperty(BUCKET);
 		prefix = properties.getProperty(PREFIX);
 		region = properties.getProperty(REGION);
-		moveSize = properties.getProperty(MOVE_SIZE);
+		partSize = properties.getProperty(PART_SIZE);
+		useMultipartSize = properties.getProperty(MULTIPART_SIZE);
 		userName = properties.getProperty(USER_NAME);
 		apiKey = properties.getProperty(API_KEY);
 		authEndpoint = properties.getProperty(AUTHENTICATION_SERVICE);
@@ -125,6 +141,8 @@ public class Config {
 		sync = properties.getProperty(TARGET_SYNC);
 		syncCheck = properties.getProperty(TARGET_SYNC_MODE);
 		acl = properties.getProperty(ACL);
+		metadata = properties.getProperty(METADATA);
+		tag = properties.getProperty(TAG);
 
 		if (mountPoint != null && !mountPoint.isEmpty() && !mountPoint.endsWith("/")) {
 			mountPoint += "/";
@@ -199,6 +217,28 @@ public class Config {
 		} else {
 			isACL = false;
 		}
+
+		if (metadata != null && !metadata.isEmpty()) {
+			metadata = metadata.toLowerCase();
+			if (metadata.compareTo(OFF) == 0) {
+				isMetadata = false;
+			} else {
+				isMetadata = true;
+			}
+		} else {
+			isMetadata = true;
+		}
+
+		if (tag != null && !tag.isEmpty()) {
+			tag = tag.toLowerCase();
+			if (tag.compareTo(OFF) == 0) {
+				isTag = false;
+			} else {
+				isTag = true;
+			}
+		} else {
+			isTag = true;
+		}
 	}
 
 	public boolean isAWS() {
@@ -255,8 +295,46 @@ public class Config {
 		return region;
 	}
 
-	public String getMoveSize() {
-		return moveSize;
+	public long getPartSize() {
+		logger.info("part size : {}", partSize);
+		if (partSize != null && !partSize.isEmpty()) {
+			partSize = partSize.toUpperCase();
+			int unitIndex = partSize.indexOf("M");
+			if (unitIndex > 0) {
+				return Long.parseLong(partSize.substring(0, unitIndex)) * MEGA_BYTES;
+			} else {
+				unitIndex = partSize.indexOf("G");
+				if (unitIndex > 0) {
+					return Long.parseLong(partSize.substring(0, unitIndex)) * GIGA_BYTES;
+				} else {
+					// MB
+					return Long.parseLong(partSize) * MEGA_BYTES;
+				}
+			}
+		} else {
+			return DEFAULT_PART_SIZE;
+		}
+	}
+
+	public long getUseMultipartSize() {
+		logger.info("use multipart size: {}", useMultipartSize);
+		if (useMultipartSize != null && !useMultipartSize.isEmpty()) {
+			useMultipartSize = useMultipartSize.toUpperCase();
+			int unitIndex = useMultipartSize.indexOf("M");
+			if (unitIndex > 0) {
+				return Long.parseLong(useMultipartSize.substring(0, unitIndex)) * MEGA_BYTES;
+			} else {
+				unitIndex = useMultipartSize.indexOf("G");
+				if (unitIndex > 0) {
+					return Long.parseLong(useMultipartSize.substring(0, unitIndex)) * GIGA_BYTES;
+				} else {
+					// MB
+					return Long.parseLong(useMultipartSize) * MEGA_BYTES;
+				}
+			}
+		} else {
+			return DEFAULT_USE_MULTIPART;
+		}
 	}
 
 	public String getUserName() {
@@ -329,5 +407,13 @@ public class Config {
 
 	public boolean isACL() {
 		return isACL;
+	}
+
+	public boolean isMetadata() {
+		return isMetadata;
+	}
+
+	public boolean isTag() {
+		return isTag;
 	}
 }

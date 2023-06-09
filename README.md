@@ -14,6 +14,7 @@
 * 재수행 옵션(-rerun)을 통해 소스 경로의 신규 및 수정된 오브젝트 및 파일만 추가로 이관하는 기능 제공
 * 상태 확인 옵션(-status)을 통해 현재 수행 중인 이관 작업의 상태를 실시간으로 모니터링 가능 
 * 수행 쓰레드 수 지정 옵션(-thread=`number`)을 통해 이관 작업 부하 및 성능 제어 가능
+* (주의) Versioning을 지원하지 않습니다. 최신 파일만 이관합니다. Source에서 ListObjects한 대상만 Target으로 이관합니다.
 
 ### 실행 옵션
 ```sh
@@ -58,7 +59,12 @@ source.conf
         secret                  Secret Access Key
         bucket                  bucket name
         prefix                  PREFIX DIR name from which to start the MOVE
-        move_size               The size of the file that you can move at once. (M bytes)
+        part_size               Part size if multipart is used. (M bytes)
+        use_multipart           Use multipart if it is larger than that size. (G/M default M)
+        metadata                Set whether to include metadata. on/off (default on)
+        tag                     Set tag to include tag info. on/off (default on)
+        acl                     object ACL on, off (default off)
+        // use for swift
         user_name               user name for swift
         api_key                 api key for swift
         auth_endpoint           http(https)://IP:port/v3 authentication endpoint for swift
@@ -67,17 +73,15 @@ source.conf
         project_id              project id for swift
         project_name            project name for swift
         container               list of containers(If it is empty, it means all container)
-        acl                     object ACL on, off
 target.conf
         endpoint                http(https)://IP:Port | region
         access                  Access Key ID
         secret                  Secret Access Key
         bucket                  bucket name
         prefix                  PREFIX DIR name from which to start the MOVED
-        versioning              bucket versioning on, off
         sync                    target object sync on, off
         sync_mode               target object sync mode, [etag|size|exist]
-        acl                     object ACL on, off
+        acl                     object ACL on, off (default off)
 주) –o는 향후 개발 예정
 ```
 
@@ -141,8 +145,13 @@ source.conf
     secret:         Secret Access Key
     bucket:         Bucket Name
     prefix:         MOVE를 시작할 PREFIX/DIR 이름 정보
-    move_size:      The size of the file that you can move at once. (M bytes)
+    part_size:      Part size if multipart is used. (M bytes)
+    use_multipart   Use multipart if it is larger than that size. (G/M, default M)
+    metadata        Set whether to include metadata. on/off (default on)
+    tag             Set tag to include tag info. on/off (default on)
     acl:            object ACL 정보 획득 여부(on/off)
+
+    // use for swift
     user_name       user name for swift
     api_key         api key for swift
     auth_endpoint   http(https)://IP:port/v3
@@ -158,12 +167,11 @@ source.conf
 ### target.conf
 ```sh
 target.conf
-    endpoint:       http(https)://IP:Port | region
+    endpoint:   http(https)://IP:Port | region
     access:     Access Key ID
     secret:     Secret Access Key
     bucket:     Bucket Name
     prefix:     저장 될 PREFIX/DIR 이름 정보
-    versioning: source bucket이 versioning 되어 있는 경우, versioning을 off로 지정하면 source bucket versioning을 무시하고 versioning 없이 move한다. versioning을 on으로 지정하거나 생략하면 source bucket versioning 설정에 따른다.
     sync:       on으로 지정하면 sync_mode에 따라 target object를 검사하여 같은 경우 skip 한다.
     sync_mode:  [etag|size|exist] 
                 etag : target에 source object가 존재하고 etag가 같은 경우 skip
@@ -185,7 +193,8 @@ source.conf
     secret=
     bucket=
     prefix=move_old_objects
-    move_size=
+    part_size=
+    use_multipart=
 
 target.conf
     endpoint=http://192.168.11.02:8080
@@ -204,7 +213,8 @@ source.conf
     secret=
     bucket=
     prefix=move_old_objects
-    move_size=
+    part_size=
+    use_multipart=
 
 target.conf
     endpoint=ap-northeast-2
@@ -223,7 +233,8 @@ source.conf
     secret=sdfsdfsdfcd408e83e23dab92
     bucket=move-test
     prefix=move_old_objects
-    move_size=
+    part_size=
+    use_multipart=
 
 target.conf
     endpoint=https://www.s3other.com:8443
@@ -242,7 +253,8 @@ source.conf
     secret=sdfsdfsdfcd408e83e23dab92
     bucket=move-test
     prefix=move_old_objects
-    move_size=
+    part_size=
+    use_multipart=
     acl=on
 
 target.conf
@@ -263,7 +275,8 @@ source.conf
     secret=sdfsdfsdfcd408e83e23dab92
     bucket=move-test
     prefix=0720
-    move_size=
+    part_size=
+    use_multipart=
 
 target.conf
     endpoint=ap-northeast-2
@@ -282,7 +295,8 @@ source.conf
     secret=AdkjJDKDSDjksdkTBEFjgUIZav0kFG
     bucket=move-test
     prefix=move_old_objects
-    move_size=
+    part_size=
+    use_multipart=
 
 target.conf
     endpoint=http://192.168.11.02:8080
@@ -301,7 +315,8 @@ source.conf
     secret=AdkjJDKDSDjksdkTBEFjgUIZav0kFG
     bucket=old_objects
     prefix=
-    move_size=
+    part_size=
+    use_multipart=
 
 target.conf
     endpoint=us-west-1
@@ -320,7 +335,8 @@ access=
 secret=
 bucket=
 prefix=
-move_size=
+part_size=
+use_multipart=
 user_name=admin
 api_key=9c7d08adb7414a8a
 auth_endpoint=http://192.168.13.188:5000/v3
@@ -347,7 +363,8 @@ access=
 secret=
 bucket=
 prefix=
-move_size=
+part_size=
+use_multipart=
 user_name=admin
 api_key=9c7d08adb7414a8a
 auth_endpoint=http://192.168.13.188:5000/v3
@@ -408,7 +425,8 @@ source.conf
     secret=
     bucket=
     prefix=
-    move_size=500   // 500M 이상의 파일은 나눠서 옮김
+    part_size=10        // multipart를 사용하는 경우 part 크기는 10M
+    use_multipart=1G    // 1G 이상의 파일을 multipart로 전송
 
 target.conf
     endpoint=http://192.168.11.02:8080
@@ -419,7 +437,7 @@ target.conf
 ```
 
 ## VM에서 실행하는 경우
-* source가 S3인 경우 source.conf/move_size의 값을 설정해 주어야 합니다.
+* source가 S3인 경우 source.conf/part_size, use_multipart의 값을 설정해 주어야 합니다.
 * VM에서 ifsmover를 이용하여 파일을 옮길 때, 파일 크기가 큰 경우 JVM의 메모리가 부족하여 실패할 수 있습니다. (로그가 남지 않음)
 ```sh
 source.conf 
@@ -429,9 +447,10 @@ source.conf
     secret=
     bucket=
     prefix=
-    move_size=500   // 500M 이상의 파일은 나눠서 옮김
+    part_size=10         // multipart를 사용하는 경우 part 크기는 10M
+    use_multipart=100    // 100M 이상의 파일을 multipart로 전송
 ```
-* VM의 메모리 상황에 맞추어 move_size의 값을 조정해야합니다.
+* VM의 메모리 상황에 맞추어 part_size의 값을 조정해야합니다.
 
 
 #### 설정 파일 체크
@@ -479,8 +498,7 @@ db_pool_size=10         // mariadb 시 db connection pool size
 ## 로그 파일
 
 * 위치
-  * 실행 파일과 동일한 경로의 ifs_mover.`jobid`.log 파일 (tar 배포 버전) 또는
-  * /var/log/infinistor/ifs_mover.`jobid`.log (rpm 배포 버전(예정))
+  * /var/log/infinistor/mover/ifs_mover.`jobid`.log (rpm 배포 버전)
 * 로그 파일 최대 크기 : 100MB
 * 로그 파일 최대 유지기간 : 7일
 
