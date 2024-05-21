@@ -492,6 +492,8 @@ db_port=3306            // mariadb 시 port
 db_user=root            // mariadb 시 user name
 db_password=1234        // mariadb 시 user password
 db_pool_size=10         // mariadb 시 db connection pool size
+replace_chars=[]+$|(){}^ // replace characters with '-'
+set_targfet_path_to_lowercase=1 // change target name to lowercase
 ```
 
 

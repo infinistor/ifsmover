@@ -29,6 +29,8 @@ public class MoverConfig {
 	private String dbUser;
 	private String dbPass;
 	private int dbPoolSize;
+    private String replaceChars;
+    private boolean isSetTagetPathToLowerCase;
 
     private static final Logger logger = LoggerFactory.getLogger(MoverConfig.class);
 
@@ -42,6 +44,8 @@ public class MoverConfig {
     private static final String DB_POOL_SIZE = "db_pool_size";
     public static final String MARIADB = "mariadb";
     public static final String SQLITEDB = "sqlite";
+    public static final String REPLACE_CHARS = "replace_chars";
+    public static final String SET_TARGET_PATH_TO_LOWERCASE = "set_targfet_path_to_lowercase";
 
     private static final String LOG_CONFIG_NOT_EXIST = "config file is not exist.";
     private static final String LOG_CONFIG_FAILED_LOADING = "config file loading is failed.";
@@ -160,6 +164,144 @@ public class MoverConfig {
         if (dbRepository == null) {
             dbRepository = MARIADB;
         }
+
+        String replaceCharsTemp = properties.getProperty(REPLACE_CHARS);
+        if (replaceCharsTemp != null) {
+            logger.debug("REPLACE_CHARS: {}", replaceCharsTemp);
+            
+            // + [ ]
+            replaceChars = "[ ";
+            int index = replaceCharsTemp.indexOf("+");
+            if (index != -1) {
+                replaceChars += "+";
+            }
+            index = replaceCharsTemp.indexOf("$");
+            if (index != -1) {
+                replaceChars += "$";
+            }
+            index = replaceCharsTemp.indexOf("|");
+            if (index != -1) {
+                replaceChars += "|";
+            }
+
+            // + \\
+            index = replaceCharsTemp.indexOf("(");
+            if (index != -1) {
+                replaceChars += "\\(";
+            }
+            index = replaceCharsTemp.indexOf(")");
+            if (index != -1) {
+                replaceChars += "\\)";
+            }
+            index = replaceCharsTemp.indexOf("{");
+            if (index != -1) {
+                replaceChars += "\\{";
+            }
+            index = replaceCharsTemp.indexOf("}");
+            if (index != -1) {
+                replaceChars += "\\}";
+            }
+            index = replaceCharsTemp.indexOf("[");
+            if (index != -1) {
+                replaceChars += "\\[";
+            }
+            index = replaceCharsTemp.indexOf("]");
+            if (index != -1) {
+                replaceChars += "\\]";
+            }
+            index = replaceCharsTemp.indexOf("^");
+            if (index != -1) {
+                replaceChars += "\\^";
+            }
+
+            index = replaceCharsTemp.indexOf("\"");
+            if (index != -1) {
+                replaceChars += "\"";
+            }
+
+            index = replaceCharsTemp.indexOf("\\");
+            // logger.info("find \\ : {}", index);
+            if (index != -1) {
+                replaceChars += "\\\\";
+            }
+
+            // Add
+            index = replaceCharsTemp.indexOf("@");
+            if (index != -1) {
+                replaceChars += "@";
+            }
+            index = replaceCharsTemp.indexOf(",");
+            if (index != -1) {
+                replaceChars += ",";
+            }
+            index = replaceCharsTemp.indexOf("=");
+            if (index != -1) {
+                replaceChars += "=";
+            }
+            index = replaceCharsTemp.indexOf("?");
+            if (index != -1) {
+                replaceChars += "?";
+            }
+            index = replaceCharsTemp.indexOf("!");
+            if (index != -1) {
+                replaceChars += "!";
+            }
+            index = replaceCharsTemp.indexOf("#");
+            if (index != -1) {
+                replaceChars += "#";
+            }
+            index = replaceCharsTemp.indexOf(";");
+            if (index != -1) {
+                replaceChars += ";";
+            }
+            index = replaceCharsTemp.indexOf(":");
+            if (index != -1) {
+                replaceChars += ":";
+            }
+            index = replaceCharsTemp.indexOf("`");
+            if (index != -1) {
+                replaceChars += "`";
+            }
+            index = replaceCharsTemp.indexOf("~");
+            if (index != -1) {
+                replaceChars += "~";
+            }
+            index = replaceCharsTemp.indexOf("%");
+            if (index != -1) {
+                replaceChars += "%";
+            }
+            index = replaceCharsTemp.indexOf("&");
+            if (index != -1) {
+                replaceChars += "&";
+            }
+            index = replaceCharsTemp.indexOf("<");
+            if (index != -1) {
+                replaceChars += "<";
+            }
+            index = replaceCharsTemp.indexOf(">");
+            if (index != -1) {
+                replaceChars += ">";
+            }
+            replaceChars += "]";
+        }
+
+        String lowerString = properties.getProperty(SET_TARGET_PATH_TO_LOWERCASE);
+        if (lowerString != null) {
+            try {
+                int value = Integer.parseInt(lowerString);
+                if (value == 0) {
+                    isSetTagetPathToLowerCase = false;
+                } else if (value == 1) {
+                    isSetTagetPathToLowerCase = true;
+                } else {
+                    isSetTagetPathToLowerCase = false;
+                }
+            } catch (NumberFormatException e) {
+                isSetTagetPathToLowerCase = false;
+            }
+        } else {
+            isSetTagetPathToLowerCase = false;
+        }
     }
 
     public static String getDBRepository() {
@@ -212,5 +354,13 @@ public class MoverConfig {
 
     public void setDbPoolSize(int dbPoolSize) {
         this.dbPoolSize = dbPoolSize;
+    }
+
+    public String getReplaceChars() {
+        return replaceChars;
+    }
+
+    public boolean isSetTagetPathToLowerCase() {
+        return isSetTagetPathToLowerCase;
     }
 }

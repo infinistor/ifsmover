@@ -48,6 +48,7 @@ public class ObjectMover {
 	
 	private Config sourceConfig;
 	private Config targetConfig;
+	private MoverConfig moverConfig;
 	private int threadCount;
 	private String type;
 	private boolean isRerun;
@@ -58,6 +59,8 @@ public class ObjectMover {
 	private boolean targetVersioning;
 	private long partSize;
 	private long useMultipartSize;
+	private String replaceChars;
+	private boolean isSetTagetPathToLowerCase;
 	// private String inventoryFileName;
 
 	private final int GET_OBJECTS_LIMIT = 1000;
@@ -68,6 +71,7 @@ public class ObjectMover {
 	public static class Builder {
 		private Config sourceConfig;
 		private Config targetConfig;
+		private MoverConfig moverConfig;
 		private int threadCount;
 		private String type;
 		private boolean isRerun;
@@ -85,6 +89,11 @@ public class ObjectMover {
 		
 		public Builder targetConfig(Config config) {
 			this.targetConfig = config;
+			return this;
+		}
+
+		public Builder moverConfig(MoverConfig moverConfig) {
+			this.moverConfig = moverConfig;
 			return this;
 		}
 		
@@ -116,6 +125,7 @@ public class ObjectMover {
 	private ObjectMover(Builder builder) {
 		sourceConfig = builder.sourceConfig;
 		targetConfig = builder.targetConfig;
+		moverConfig = builder.moverConfig;
 		threadCount = builder.threadCount;
 		type = builder.type;
 		isRerun = builder.isRerun;
@@ -130,6 +140,8 @@ public class ObjectMover {
 
 		partSize = sourceConfig.getPartSize();
 		useMultipartSize = sourceConfig.getUseMultipartSize();
+		replaceChars = moverConfig.getReplaceChars();
+		isSetTagetPathToLowerCase = moverConfig.isSetTagetPathToLowerCase();
 		logger.info("multipart size : {}, part size : {}, thread count: {}", useMultipartSize, partSize, threadCount);
 	}
 	
@@ -350,6 +362,14 @@ public class ObjectMover {
 				if (!isFile && !targetPath.endsWith("/")) {
 					targetPath += "/";
 				}
+			}
+
+			if (replaceChars != null && !replaceChars.isEmpty()) {
+				targetPath = targetPath.replaceAll(replaceChars, "-");
+			}
+
+			if (isSetTagetPathToLowerCase) {
+				targetPath = targetPath.toLowerCase();
 			}
 
 			if (versionId != null && versionId.compareTo("0") == 0) {
